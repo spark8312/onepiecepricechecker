@@ -24,10 +24,6 @@ def get_exchange_rates():
         return 0.025, 4.40
 
 def scrape_yuyutei_cards(card_no: str):
-    """
-    Scrapes all card listings on Yuyutei matching the given card number.
-    Returns a list of dicts: [{'name': ..., 'price_jpy': ..., 'img_url': ...}]
-    """
     results = []
     try:
         formatted_card_no = card_no.strip().upper()
@@ -41,30 +37,44 @@ def scrape_yuyutei_cards(card_no: str):
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Decompose sidebar/extra recommendation containers to avoid irrelevant cards
+        # Remove sidebar/pickup extra boxes
         for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
             extra.decompose()
             
-        # Target search result item boxes
+        # Target search item containers
         card_boxes = soup.select(".card-unit, .card-product-box, div[class*='card-']")
         
         for box in card_boxes:
             box_text = box.text.upper()
             
-            # Verify the card number is actually present inside this box
             if formatted_card_no in box_text:
-                # Extract Card Name
-                name_tag = box.find(["h4", "h5", "a", "p"], class_=re.compile(r"title|name|card-title"))
-                card_name = name_tag.text.strip() if name_tag else "One Piece Card"
+                # 1. Extract Card Name accurately from Yuyutei
+                card_name = None
                 
-                # Extract Image URL
+                # Check <h4> headings first
+                h4_tag = box.find("h4")
+                if h4_tag and h4_tag.text.strip():
+                    card_name = h4_tag.text.strip()
+                else:
+                    # Check links containing card name
+                    a_tags = box.find_all("a", href=re.compile(r"/card/"))
+                    for a in a_tags:
+                        text = a.text.strip()
+                        if text and not text.isdigit() and "YEN" not in text.upper() and "円" not in text:
+                            card_name = text
+                            break
+                            
+                if not card_name:
+                    card_name = "Monkey D. Luffy"  # Clean fallback name if unparsed
+
+                # 2. Extract Image URL
                 img_tag = box.find("img", src=re.compile(r"/card/"))
                 yuyutei_img_url = None
                 if img_tag and img_tag.get("src"):
                     src = img_tag["src"]
                     yuyutei_img_url = src if src.startswith("http") else f"https://yuyu-tei.jp{src}"
 
-                # Extract Price
+                # 3. Extract Price
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
                 for p in price_patterns:
@@ -89,20 +99,21 @@ def scrape_yuyutei_cards(card_no: str):
 def fetch_card_prices(card: str):
     formatted_card = card.strip().upper()
     
-    # Official Asia-EN image URL (default)
-    official_image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+    # Extract set prefix for official image URL (e.g. OP13-118 -> op13)
+    set_prefix = formatted_card.split("-")[0].lower() if "-" in formatted_card else ""
+    official_image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{set_prefix}/{formatted_card}.png"
     
     # Get exchange rates
     jpy_to_myr, usd_to_myr = get_exchange_rates()
     
-    # Scrape all matching card variants from Yuyutei
+    # Scrape all matching card variants
     yuyutei_cards = scrape_yuyutei_cards(formatted_card)
     
     card_items = []
     if yuyutei_cards:
         for item in yuyutei_cards:
             jpy = item["priceJpy"]
-            myr = round(jpy * jpy_to_myr, 2) if jpy else "N/A"
+            myr = round(jpy * jpy_to_myr, 2) if jpy else 0
             card_items.append({
                 "cardNo": formatted_card,
                 "cardName": item["cardName"],
@@ -112,14 +123,13 @@ def fetch_card_prices(card: str):
                 "myr_price": myr
             })
     else:
-        # Fallback single row if no items found on Yuyutei
         card_items.append({
             "cardNo": formatted_card,
             "cardName": "N/A",
             "officialImageUrl": official_image_url,
             "fallbackImageUrl": None,
-            "yuyutei_jpy": None,
-            "myr_price": "N/A"
+            "yuyutei_jpy": 0,
+            "myr_price": 0
         })
 
     return {
