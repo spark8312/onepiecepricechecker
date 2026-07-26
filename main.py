@@ -14,33 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Set map fallback in case Yuyutei search page doesn't list set breadcrumbs
-SET_MAP = {
-    "ST01": "[ST01] STARTER DECK -Straw Hat Crew-",
-    "ST02": "[ST02] STARTER DECK -Worst Generation-",
-    "ST03": "[ST03] STARTER DECK -Seven Warlords of the Sea-",
-    "ST04": "[ST04] STARTER DECK -Animal Kingdom Pirates-",
-    "ST05": "[ST05] STARTER DECK -ONE PIECE FILM Edition-",
-    "ST06": "[ST06] STARTER DECK -Navy-",
-    "ST07": "[ST07] STARTER DECK -Big Mom Pirates-",
-    "ST08": "[ST08] STARTER DECK -Monkey D. Luffy-",
-    "ST09": "[ST09] STARTER DECK -Yamato-",
-    "ST10": "[ST10] STARTER DECK -Ultimate Deck- Three Captains",
-    "ST11": "[ST11] STARTER DECK -Uta-",
-    "ST12": "[ST12] STARTER DECK -Zoro & Sanji-",
-    "ST13": "[ST13] 3D2Y",
-    "ST14": "[ST14] 3D2Y",
-    "OP01": "[OP01] BOOSTER PACK -ROMANCE DAWN-",
-    "OP02": "[OP02] BOOSTER PACK -PARAMOUNT WAR-",
-    "OP03": "[OP03] BOOSTER PACK -PILLARS OF STRENGTH-",
-    "OP04": "[OP04] BOOSTER PACK -KINGDOMS OF INTRIGUE-",
-    "OP05": "[OP05] Protagonist of the New Era",
-    "OP06": "[OP06] BOOSTER PACK -FLANKED BY LEGENDS-",
-    "OP07": "[OP07] BOOSTER PACK -500 YEARS INTO THE FUTURE-",
-    "OP08": "[OP08] BOOSTER PACK -TWO LEGENDS-",
-    "OP09": "[OP09] BOOSTER PACK -THE FOUR EMPERORS-",
-    "EB01": "[EB01] EXTRA BOOSTER -MEMORIAL COLLECTION-",
-}
+DETAIL_CACHE = {}
 
 def get_exchange_rates():
     try:
@@ -73,6 +47,46 @@ def auto_translate_jp_to_en(text: str) -> str:
         print(f"Translation error: {e}")
         return text
 
+def scrape_card_detail_page(detail_url: str):
+    """Fetches Card Set and Card Name directly from Yuyutei individual card page."""
+    if detail_url in DETAIL_CACHE:
+        return DETAIL_CACHE[detail_url]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
+    }
+
+    card_set_en = "ONE PIECE Card Game"
+    card_name_en = ""
+
+    try:
+        res = requests.get(detail_url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            # Extract set name from <title> e.g., "... | [OP05] 主役のRank | ONE PIECE..."
+            page_title = soup.title.text if soup.title else ""
+            set_match = re.search(r'\[(.*?)\]\s*([^|]+)', page_title)
+            if set_match:
+                set_code = set_match.group(1).strip()
+                raw_set_jp = set_match.group(2).strip()
+                translated_set = auto_translate_jp_to_en(raw_set_jp)
+                card_set_en = f"[{set_code}] {translated_set}"
+
+            # Extract card name from main <h2>/<h1> heading on the detail page
+            heading = soup.find(["h1", "h2", "h3"], class_=re.compile(r'title|card-title|name', re.I))
+            if heading and heading.text.strip():
+                raw_jp_name = heading.text.strip()
+                card_name_en = auto_translate_jp_to_en(raw_jp_name)
+
+    except Exception as e:
+        print(f"Error scraping detail page {detail_url}: {e}")
+
+    result = {"cardSet": card_set_en, "cardName": card_name_en}
+    DETAIL_CACHE[detail_url] = result
+    return result
+
 def scrape_yuyutei_cards(search_query: str):
     results = []
     try:
@@ -86,17 +100,7 @@ def scrape_yuyutei_cards(search_query: str):
         
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-
-        # 1. Try extracting Card Set from Yuyutei breadcrumbs or title
-        yyt_card_set = ""
-        page_title = soup.title.text if soup.title else ""
         
-        set_match = re.search(r'\[(.*?)\]\s*([^|]+)', page_title)
-        if set_match:
-            raw_set_name = auto_translate_jp_to_en(set_match.group(2).strip())
-            yyt_card_set = f"[{set_match.group(1)}] {raw_set_name}"
-
-        # Clear pickup sections
         for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
             extra.decompose()
             
@@ -109,21 +113,33 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Determine set name from card prefix if title scraping didn't match
-                prefix = extracted_card_no.split("-")[0] if "-" in extracted_card_no else extracted_card_no[:4]
-                final_card_set = yyt_card_set if yyt_card_set else SET_MAP.get(prefix, f"[{prefix}] ONE PIECE Card Game")
-
+                # Find link to individual card detail page
+                detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
+                card_set_en = "ONE PIECE Card Game"
                 raw_jp_name = ""
-                h4_tag = box.find(["h4", "h5"])
-                if h4_tag and h4_tag.text.strip():
-                    raw_jp_name = h4_tag.text.strip()
-                else:
-                    a_tags = box.find_all("a")
-                    for a in a_tags:
-                        text = a.text.strip()
-                        if text and not text.isdigit() and "円" not in text and "YEN" not in text.upper():
-                            raw_jp_name = text
-                            break
+
+                if detail_link_tag and detail_link_tag.get("href"):
+                    detail_href = detail_link_tag["href"]
+                    full_detail_url = detail_href if detail_href.startswith("http") else f"https://yuyu-tei.jp{detail_href}"
+                    
+                    detail_data = scrape_card_detail_page(full_detail_url)
+                    if detail_data.get("cardSet"):
+                        card_set_en = detail_data["cardSet"]
+                    if detail_data.get("cardName"):
+                        card_name_en = detail_data["cardName"]
+
+                # Fallback card name extraction if detail page name wasn't found
+                if not raw_jp_name:
+                    h4_tag = box.find(["h4", "h5"])
+                    if h4_tag and h4_tag.text.strip():
+                        raw_jp_name = h4_tag.text.strip()
+                    else:
+                        a_tags = box.find_all("a")
+                        for a in a_tags:
+                            text = a.text.strip()
+                            if text and not text.isdigit() and "円" not in text and "YEN" not in text.upper():
+                                raw_jp_name = text
+                                break
 
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
@@ -134,15 +150,15 @@ def scrape_yuyutei_cards(search_query: str):
                         break
                 
                 if card_price is not None:
-                    card_name_en = auto_translate_jp_to_en(raw_jp_name) if raw_jp_name else f"Card ({extracted_card_no})"
-                    is_parallel = "パラレル" in raw_jp_name or "parallel" in card_name_en.lower()
-                    
+                    final_card_name = card_name_en if 'card_name_en' in locals() and card_name_en else auto_translate_jp_to_en(raw_jp_name)
+                    if not final_card_name:
+                        final_card_name = f"Card ({extracted_card_no})"
+
                     results.append({
                         "cardNo": extracted_card_no,
-                        "cardName": card_name_en,
-                        "cardSet": final_card_set,
-                        "priceJpy": card_price,
-                        "isParallel": is_parallel
+                        "cardName": final_card_name,
+                        "cardSet": card_set_en,
+                        "priceJpy": card_price
                     })
                     
     except Exception as e:
