@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>One Piece TCG Price Checker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+
+  <div class="max-w-3xl mx-auto bg-white rounded-lg shadow-md p-6">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">
+      🏴‍☠️ One Piece TCG Price Finder
+    </h1>
+
+    <form id="search-form" class="flex gap-4 mb-8">
+      <input 
+        type="text" 
+        id="card-number" 
+        placeholder="Enter Card No (e.g. P-074, OP01-016)..." 
+        class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        required
+      />
+      <button 
+        type="submit" 
+        class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition"
+      >
+        Search
+      </button>
+    </form>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-gray-800 text-white">
+            <th class="p-3 border">Card No</th>
+            <th class="p-3 border">Yuyutei (JPY)</th>
+            <th class="p-3 border bg-emerald-700">Converted Price (MYR)</th>
+          </tr>
+        </thead>
+        <tbody id="results-body">
+          <tr>
+            <td colspan="3" class="p-4 text-center text-gray-500">
+              Enter a card number above to search.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // REPLACE THIS URL AFTER STEP 3 IS COMPLETED
+    const BACKEND_URL = "https://YOUR-RENDER-APP-NAME.onrender.com";
+
+    const form = document.getElementById('search-form');
+    const tbody = document.getElementById('results-body');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cardNo = document.getElementById('card-number').value.trim();
+
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="3" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
+            Fetching prices from Yuyutei...
+          </td>
+        </tr>`;
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/prices?card=${encodeURIComponent(cardNo)}`);
+        const data = await response.json();
+
+        tbody.innerHTML = `
+          <tr class="hover:bg-gray-50">
+            <td class="p-3 border font-semibold">${data.cardNo}</td>
+            <td class="p-3 border">${data.yuyutei_jpy ? `¥${data.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
+            <td class="p-3 border font-bold text-emerald-600 bg-emerald-50">
+              ${data.myr_price !== 'N/A' ? `RM ${data.myr_price}` : 'N/A'}
+            </td>
+          </tr>
+        `;
+      } catch (err) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="3" class="p-4 text-center text-red-500">
+              Error connecting to the price server.
+            </td>
+          </tr>`;
+      }
+    });
+  </script>
+</body>
+</html>
