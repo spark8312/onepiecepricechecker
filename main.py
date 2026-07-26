@@ -23,56 +23,45 @@ def get_exchange_rates():
     except Exception:
         return 0.025, 4.40
 
-def translate_to_english(text: str) -> str:
-    # Extended translation list covering special printings, rarities, and characters
-    translations = [
-        ("レッドスーパーパラレル", " (Red Super Parallel)"),
-        ("スーパーパラレル", " (Super Parallel / Manga Rare)"),
-        ("特別パラレル", " (Special Parallel)"),
-        ("パラレル", " (Parallel)"),
-        ("リーダー", " (Leader)"),
-        ("ホイル箔押し", " (Parallel / Foil Stamped)"),
-        ("箔押し", " (Foil Stamped)"),
-        ("ホイル", " (Foil)"),
-        ("金文字", " (Gold Lettering)"),
-        ("プロモ", " (Promo)"),
-        ("モンキー・D・ルフィ", "Monkey D. Luffy"),
-        ("ポートガス・D・エース", "Portgas D. Ace"),
-        ("サボ", "Sabo"),
-        ("ヤマト", "Yamato"),
-        ("シャンクス", "Shanks"),
-        ("トラファルガー・ロー", "Trafalgar Law"),
-        ("ロロノア・ゾロ", "Roronoa Zoro"),
-        ("ナミ", "Nami"),
-        ("サンジ", "Sanji"),
-        ("ウタ", "Uta"),
-        ("ボア・ハンコック", "Boa Hancock"),
-        ("エドワード・ニューゲート", "Edward Newgate"),
-        ("ゴール・D・ロジャー", "Gol D. Roger"),
-        ("シャーロット・カタクリ", "Charlotte Katakuri"),
-        ("クザン", "Kuzan"),
-        ("ユースタス・キッド", "Eustass Kid"),
-        ("シルバーズ・レイリー", "Silvers Rayleigh"),
-    ]
-    
-    clean_text = text
-    for jp, en in translations:
-        clean_text = clean_text.replace(jp, en)
+def fetch_official_english_name(card_no: str) -> str:
+    """Fetch the clean, official English card name from the English OPTCG site."""
+    try:
+        url = f"https://en.onepiece-cardgame.com/cardlist/?seek={card_no}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, "html.parser")
         
-    # Strip remaining untranslated Japanese kanji/kana without removing English parens/tags like (LECAFIG)
-    clean_text = re.sub(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]', '', clean_text)
-    clean_text = re.sub(r'\(\s*\)', '', clean_text)  # Remove empty parentheses
-    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    return clean_text
+        # Look for card detail title in English site
+        card_name_elem = soup.select_one(".cardName, .card-name, .cardDetailName")
+        if card_name_elem and card_name_elem.text.strip():
+            return card_name_elem.text.strip()
+    except Exception:
+        pass
+    return None
+
+def extract_variant_tag(jp_text: str) -> str:
+    """Identify card variants directly from Yuyutei tags without full manual translation."""
+    tags = []
+    if "スーパーパラレル" in jp_text:
+        tags.append("Manga Rare / Super Parallel")
+    elif "特別パラレル" in jp_text:
+        tags.append("Special Parallel")
+    elif "パラレル" in jp_text or "箔押し" in jp_text:
+        tags.append("Parallel")
+    if "リーダー" in jp_text:
+        tags.append("Leader")
+    if "プロモ" in jp_text:
+        tags.append("Promo")
+
+    return f" ({', '.join(tags)})" if tags else ""
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
     try:
         formatted_query = search_query.strip().upper()
         url = f"https://yuyu-tei.jp/sell/opc/s/search?search_word={formatted_query}"
-        
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
         }
         
@@ -91,19 +80,10 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                jp_name = None
+                jp_name = ""
                 h4_tag = box.find(["h4", "h5"])
                 if h4_tag and h4_tag.text.strip():
                     jp_name = h4_tag.text.strip()
-                else:
-                    a_tags = box.find_all("a")
-                    for a in a_tags:
-                        text = a.text.strip()
-                        if text and not text.isdigit() and "円" not in text and "YEN" not in text.upper():
-                            jp_name = text
-                            break
-                            
-                card_name = translate_to_english(jp_name) if jp_name else f"Card ({extracted_card_no})"
 
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
@@ -114,9 +94,10 @@ def scrape_yuyutei_cards(search_query: str):
                         break
                 
                 if card_price is not None:
+                    variant_tag = extract_variant_tag(jp_name)
                     results.append({
                         "cardNo": extracted_card_no,
-                        "cardName": card_name,
+                        "variantTag": variant_tag,
                         "priceJpy": card_price
                     })
                     
@@ -132,6 +113,9 @@ def fetch_card_prices(card: str):
     
     yuyutei_cards = scrape_yuyutei_cards(formatted_query)
     
+    # Pre-fetch official English base name for the search query
+    official_name = fetch_official_english_name(formatted_query) or formatted_query
+
     card_items = []
     if yuyutei_cards:
         yuyutei_cards.sort(key=lambda x: x["priceJpy"], reverse=True)
@@ -141,6 +125,8 @@ def fetch_card_prices(card: str):
             jpy = item["priceJpy"]
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
             full_card_no = item["cardNo"]
+            
+            full_card_name = f"{official_name}{item['variantTag']}"
             
             if total_items > 1 and idx < total_items - 1:
                 p_suffix = f"_p{total_items - 1 - idx}"
@@ -152,7 +138,7 @@ def fetch_card_prices(card: str):
 
             card_items.append({
                 "cardNo": full_card_no,
-                "cardName": item["cardName"],
+                "cardName": full_card_name,
                 "imageUrl": image_url,
                 "baseImageUrl": fallback_base_url,
                 "yuyutei_jpy": jpy,
