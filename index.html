@@ -8,7 +8,7 @@
 </head>
 <body class="bg-gray-100 min-h-screen p-8">
 
-  <div class="max-w-5xl mx-auto bg-white rounded-lg shadow-md p-6">
+  <div class="max-w-6xl mx-auto bg-white rounded-lg shadow-md p-6">
     <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">
       🏴‍☠️ One Piece TCG Price Finder
     </h1>
@@ -50,12 +50,13 @@
             <th class="p-3 border">Card No</th>
             <th class="p-3 border">Card Name (English)</th>
             <th class="p-3 border">Yuyutei (JPY)</th>
+            <th class="p-3 border bg-blue-900 text-center">Conversion Rate</th>
             <th class="p-3 border bg-emerald-700">Converted Price (MYR)</th>
           </tr>
         </thead>
         <tbody id="results-body">
           <tr>
-            <td colspan="5" class="p-4 text-center text-gray-500">
+            <td colspan="6" class="p-4 text-center text-gray-500">
               Enter a card number above to search.
             </td>
           </tr>
@@ -72,6 +73,7 @@
     const sortSelect = document.getElementById('sort-order');
 
     let currentItems = [];
+    let currentConversionRate = 0;
 
     function renderTable() {
       if (!currentItems || currentItems.length === 0) return;
@@ -84,12 +86,15 @@
         return sortOrder === 'high-low' ? priceB - priceA : priceA - priceB;
       });
 
+      const formattedRate = currentConversionRate ? `1 JPY = ${currentConversionRate.toFixed(5)} MYR` : 'N/A';
+
       let rowsHtml = '';
       sortedItems.forEach((item) => {
         const imageHtml = `
           <img 
             src="${item.imageUrl}" 
             alt="${item.cardNo}" 
+            referrerpolicy="no-referrer"
             class="h-24 mx-auto object-contain rounded shadow-sm" 
             onerror="if(this.src !== '${item.baseImageUrl}'){ this.src = '${item.baseImageUrl}'; } else { this.parentElement.innerHTML='<span class=\\'text-xs text-gray-400\\'>No Image</span>'; }" 
           />`;
@@ -100,6 +105,7 @@
             <td class="p-3 border font-semibold">${item.cardNo}</td>
             <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
             <td class="p-3 border font-semibold">${item.yuyutei_jpy ? `¥${item.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
+            <td class="p-3 border text-center text-xs text-gray-600 bg-blue-50 font-mono">${formattedRate}</td>
             <td class="p-3 border font-bold text-emerald-600 bg-emerald-50">
               ${item.myr_price ? `RM ${item.myr_price.toFixed(2)}` : 'N/A'}
             </td>
@@ -118,8 +124,8 @@
       
       tbody.innerHTML = `
         <tr>
-          <td colspan="5" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
-            Fetching card data from Official Bandai CDN...
+          <td colspan="6" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
+            Fetching card data and conversion rates...
           </td>
         </tr>`;
 
@@ -130,7 +136,7 @@
         if (!data.items || data.items.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="5" class="p-4 text-center text-gray-500">
+              <td colspan="6" class="p-4 text-center text-gray-500">
                 No cards found for "${cardNo}".
               </td>
             </tr>`;
@@ -138,12 +144,13 @@
         }
 
         currentItems = data.items;
+        currentConversionRate = data.conversionRate || 0;
         renderTable();
 
       } catch (err) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" class="p-4 text-center text-red-500">
+            <td colspan="6" class="p-4 text-center text-red-500">
               Error connecting to the price server.
             </td>
           </tr>`;
