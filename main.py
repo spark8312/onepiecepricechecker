@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 from bs4 import BeautifulSoup
 import re
-import urllib.parse
 
 app = FastAPI()
 
@@ -24,33 +23,45 @@ def get_exchange_rates():
     except Exception:
         return 0.025, 4.40
 
-def auto_translate_jp_to_en(text: str) -> str:
-    if not text:
-        return ""
+def fetch_official_opcg_details(card_no: str):
+    """Fetches official English card name and Card Set from official Bandai OPCG site."""
     try:
-        clean_input = text.replace('（', '(').replace('）', ')').replace('【', '(').replace('】', ')')
-        encoded_text = urllib.parse.quote(clean_input)
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=en&dt=t&q={encoded_text}"
-        
-        response = requests.get(url, timeout=5).json()
-        translated_text = "".join([segment[0] for segment in response[0] if segment[0]])
-        
-        translated_text = translated_text.replace("Monkey. D. Luffy", "Monkey D. Luffy")
-        translated_text = re.sub(r'\(\s*\)', '', translated_text)
-        translated_text = re.sub(r'\(\s*\((.*?)\)\s*\)', r'(\1)', translated_text)
-        translated_text = re.sub(r'\s+', ' ', translated_text).strip()
-        
-        return translated_text
-    except Exception as e:
-        print(f"Translation error: {e}")
-        return text
+        clean_no = card_no.strip().upper()
+        url = f"https://asia-en.onepiece-cardgame.com/cardlist/?seek={clean_no}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=6)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            # Find matching card container block in official OPCG page
+            card_dl = soup.find("dl", class_="modalCol") or soup.find("div", class_="cardDetail")
+            if not card_dl:
+                # Fallback search across list items
+                for dl in soup.select(".cardListItem, dl"):
+                    if clean_no in dl.text.upper():
+                        card_dl = dl
+                        break
 
-def get_official_card_image_url(card_no: str, is_parallel: bool = False, p_index: int = 0) -> str:
-    """Generates the official Bandai One Piece TCG image URL."""
-    clean_no = card_no.strip().upper()
-    if is_parallel and p_index > 0:
-        return f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{clean_no}_p{p_index}.png"
-    return f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{clean_no}.png"
+            if card_dl:
+                # Extract official card name
+                name_elem = card_dl.select_one(".cardName, .card-name, .name")
+                official_name = name_elem.text.strip() if name_elem else ""
+
+                # Extract Card Set name (e.g. -ROMANCE DAWN- [OP01])
+                set_elem = card_dl.select_one(".series, .cardSet, .setName")
+                card_set = set_elem.text.strip() if set_elem else ""
+
+                # Clean up extracted strings
+                official_name = re.sub(r'\s+', ' ', official_name)
+                card_set = re.sub(r'\s+', ' ', card_set)
+
+                return official_name, card_set
+    except Exception as e:
+        print(f"Error fetching official OPCG details: {e}")
+    
+    return None, None
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
@@ -59,7 +70,7 @@ def scrape_yuyutei_cards(search_query: str):
         url = f"https://yuyu-tei.jp/sell/opc/s/search?search_word={formatted_query}"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
         }
         
@@ -82,13 +93,6 @@ def scrape_yuyutei_cards(search_query: str):
                 h4_tag = box.find(["h4", "h5"])
                 if h4_tag and h4_tag.text.strip():
                     raw_jp_name = h4_tag.text.strip()
-                else:
-                    a_tags = box.find_all("a")
-                    for a in a_tags:
-                        text = a.text.strip()
-                        if text and not text.isdigit() and "円" not in text and "YEN" not in text.upper():
-                            raw_jp_name = text
-                            break
 
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
@@ -99,14 +103,16 @@ def scrape_yuyutei_cards(search_query: str):
                         break
                 
                 if card_price is not None:
-                    card_name_en = auto_translate_jp_to_en(raw_jp_name) if raw_jp_name else f"Card ({extracted_card_no})"
-                    is_parallel = "パラレル" in raw_jp_name or "parallel" in card_name_en.lower()
-                    
+                    variant_tag = ""
+                    if "パラレル" in raw_jp_name or "平行" in raw_jp_name:
+                        variant_tag = " (Parallel)"
+                    elif "リーダー" in raw_jp_name:
+                        variant_tag = " (Leader)"
+
                     results.append({
                         "cardNo": extracted_card_no,
-                        "cardName": card_name_en,
-                        "priceJpy": card_price,
-                        "isParallel": is_parallel
+                        "variantTag": variant_tag,
+                        "priceJpy": card_price
                     })
                     
     except Exception as e:
@@ -121,24 +127,34 @@ def fetch_card_prices(card: str):
     
     yuyutei_cards = scrape_yuyutei_cards(formatted_query)
     
+    # Fetch official English Card Name and Card Set from official OPCG
+    official_name, card_set = fetch_official_opcg_details(formatted_query)
+    
     card_items = []
     if yuyutei_cards:
-        # Group cards by card number to assign alternate art suffixes (_p1, _p2)
+        # Group by cardNo
         card_groups = {}
         for item in yuyutei_cards:
             c_no = item["cardNo"]
             card_groups.setdefault(c_no, []).append(item)
 
         for c_no, items in card_groups.items():
-            # Sort highest price first
             items.sort(key=lambda x: x["priceJpy"], reverse=True)
             total = len(items)
-            
+
+            # Look up card-specific OPCG details if query was a set code like ST01
+            group_official_name, group_card_set = official_name, card_set
+            if not group_official_name or c_no != formatted_query:
+                specific_name, specific_set = fetch_official_opcg_details(c_no)
+                group_official_name = specific_name or c_no
+                group_card_set = specific_set or "Official OPCG"
+
             for idx, item in enumerate(items):
                 jpy = item["priceJpy"]
                 myr = round(jpy * jpy_to_myr, 2) if jpy else 0
                 
-                # Assign official image URLs (_p1, _p2 for alternate arts, base url for standard art)
+                full_card_name = f"{group_official_name}{item['variantTag']}"
+
                 if total > 1 and idx < total - 1:
                     p_num = total - 1 - idx
                     img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}_p{p_num}.png"
@@ -149,7 +165,8 @@ def fetch_card_prices(card: str):
 
                 card_items.append({
                     "cardNo": c_no,
-                    "cardName": item["cardName"],
+                    "cardName": full_card_name,
+                    "cardSet": group_card_set,
                     "imageUrl": img_url,
                     "baseImageUrl": base_img_url,
                     "yuyutei_jpy": jpy,
