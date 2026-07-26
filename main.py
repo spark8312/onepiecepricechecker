@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 from bs4 import BeautifulSoup
 import re
+import html
 import urllib.parse
 
 app = FastAPI()
@@ -14,6 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+OFFICIAL_SET_CACHE = {}
 DETAIL_CACHE = {}
 
 def get_exchange_rates():
@@ -25,6 +27,64 @@ def get_exchange_rates():
         return jpy_to_myr, usd_to_myr
     except Exception:
         return 0.025, 4.40
+
+def load_official_set_map():
+    """Scrapes official set names from Bandai's official site and builds a code-to-set lookup dict."""
+    global OFFICIAL_SET_CACHE
+    if OFFICIAL_SET_CACHE:
+        return OFFICIAL_SET_CACHE
+
+    try:
+        url = "https://asia-en.onepiece-cardgame.com/cardlist/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=8)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            # Find select/option tags or series list elements
+            options = soup.find_all("option")
+            for opt in options:
+                raw_text = html.unescape(opt.decode_contents())
+                clean_set_name = re.sub(r'<[^>]+>', ' ', raw_text)
+                clean_set_name = re.sub(r'\s+', ' ', clean_set_name).strip()
+
+                if clean_set_name and "ALL" not in clean_set_name.upper():
+                    # Extract codes like OP-05, OP05, ST-01, EB-01, PRB-01 inside brackets [OP-05]
+                    codes = re.findall(r'\[(.*?)\]', clean_set_name)
+                    for code in codes:
+                        norm_code = code.replace("-", "").upper()
+                        OFFICIAL_SET_CACHE[norm_code] = clean_set_name
+                        OFFICIAL_SET_CACHE[code.upper()] = clean_set_name
+
+            # Fallback parsing for button/modal lists if select options aren't rendered
+            if not OFFICIAL_SET_CACHE:
+                for elem in soup.find_all(text=re.compile(r'\[(OP|ST|EB|PRB)-?\d+\]', re.I)):
+                    text = elem.strip()
+                    codes = re.findall(r'\[(.*?)\]', text)
+                    for code in codes:
+                        norm_code = code.replace("-", "").upper()
+                        OFFICIAL_SET_CACHE[norm_code] = text
+                        OFFICIAL_SET_CACHE[code.upper()] = text
+
+    except Exception as e:
+        print(f"Error fetching official set list: {e}")
+
+    return OFFICIAL_SET_CACHE
+
+def get_official_set_name(card_no: str) -> str:
+    """Matches the card number series prefix (e.g. OP13, ST01) against official sets."""
+    official_sets = load_official_set_map()
+    
+    # Extract series code prefix (e.g., OP13 from OP13-001, ST01 from ST01-012)
+    match = re.match(r'^([A-Z]{2,3}\d{2})', card_no.strip().upper())
+    if match:
+        series_code = match.group(1)
+        if series_code in official_sets:
+            return official_sets[series_code]
+            
+    return "N/A"
 
 def auto_translate_jp_to_en(text: str) -> str:
     if not text:
@@ -47,8 +107,8 @@ def auto_translate_jp_to_en(text: str) -> str:
         print(f"Translation error: {e}")
         return text
 
-def scrape_card_detail_page(detail_url: str):
-    """Fetches Card Set and Card Name directly from Yuyutei individual card page."""
+def scrape_card_detail_name(detail_url: str) -> str:
+    """Optionally fetches character name from detail page."""
     if detail_url in DETAIL_CACHE:
         return DETAIL_CACHE[detail_url]
 
@@ -57,35 +117,20 @@ def scrape_card_detail_page(detail_url: str):
         "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
     }
 
-    card_set_en = "ONE PIECE Card Game"
     card_name_en = ""
-
     try:
         res = requests.get(detail_url, headers=headers, timeout=5)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            
-            # Extract set name from <title> e.g., "... | [OP05] 主役のRank | ONE PIECE..."
-            page_title = soup.title.text if soup.title else ""
-            set_match = re.search(r'\[(.*?)\]\s*([^|]+)', page_title)
-            if set_match:
-                set_code = set_match.group(1).strip()
-                raw_set_jp = set_match.group(2).strip()
-                translated_set = auto_translate_jp_to_en(raw_set_jp)
-                card_set_en = f"[{set_code}] {translated_set}"
-
-            # Extract card name from main <h2>/<h1> heading on the detail page
             heading = soup.find(["h1", "h2", "h3"], class_=re.compile(r'title|card-title|name', re.I))
             if heading and heading.text.strip():
                 raw_jp_name = heading.text.strip()
                 card_name_en = auto_translate_jp_to_en(raw_jp_name)
-
     except Exception as e:
         print(f"Error scraping detail page {detail_url}: {e}")
 
-    result = {"cardSet": card_set_en, "cardName": card_name_en}
-    DETAIL_CACHE[detail_url] = result
-    return result
+    DETAIL_CACHE[detail_url] = card_name_en
+    return card_name_en
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
@@ -113,23 +158,19 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Find link to individual card detail page
-                detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
-                card_set_en = "ONE PIECE Card Game"
-                raw_jp_name = ""
+                # Map series code to official set title or return "N/A"
+                card_set_en = get_official_set_name(extracted_card_no)
 
+                raw_jp_name = ""
+                card_name_en = ""
+                
+                detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
                 if detail_link_tag and detail_link_tag.get("href"):
                     detail_href = detail_link_tag["href"]
                     full_detail_url = detail_href if detail_href.startswith("http") else f"https://yuyu-tei.jp{detail_href}"
-                    
-                    detail_data = scrape_card_detail_page(full_detail_url)
-                    if detail_data.get("cardSet"):
-                        card_set_en = detail_data["cardSet"]
-                    if detail_data.get("cardName"):
-                        card_name_en = detail_data["cardName"]
+                    card_name_en = scrape_card_detail_name(full_detail_url)
 
-                # Fallback card name extraction if detail page name wasn't found
-                if not raw_jp_name:
+                if not card_name_en:
                     h4_tag = box.find(["h4", "h5"])
                     if h4_tag and h4_tag.text.strip():
                         raw_jp_name = h4_tag.text.strip()
@@ -141,6 +182,8 @@ def scrape_yuyutei_cards(search_query: str):
                                 raw_jp_name = text
                                 break
 
+                    card_name_en = auto_translate_jp_to_en(raw_jp_name) if raw_jp_name else f"Card ({extracted_card_no})"
+
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
                 for p in price_patterns:
@@ -150,13 +193,9 @@ def scrape_yuyutei_cards(search_query: str):
                         break
                 
                 if card_price is not None:
-                    final_card_name = card_name_en if 'card_name_en' in locals() and card_name_en else auto_translate_jp_to_en(raw_jp_name)
-                    if not final_card_name:
-                        final_card_name = f"Card ({extracted_card_no})"
-
                     results.append({
                         "cardNo": extracted_card_no,
-                        "cardName": final_card_name,
+                        "cardName": card_name_en,
                         "cardSet": card_set_en,
                         "priceJpy": card_price
                     })
