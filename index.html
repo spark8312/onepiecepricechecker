@@ -63,7 +63,7 @@
       tbody.innerHTML = `
         <tr>
           <td colspan="4" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
-            Fetching image and prices from Yuyutei...
+            Fetching image and prices...
           </td>
         </tr>`;
 
@@ -71,8 +71,9 @@
         const response = await fetch(`${BACKEND_URL}/api/prices?card=${encodeURIComponent(cardNo)}`);
         const data = await response.json();
 
+        // referrerpolicy="no-referrer" prevents Bandai from blocking the image embed
         const imageHtml = data.imageUrl 
-          ? `<img src="${data.imageUrl}" alt="${data.cardNo}" class="h-20 mx-auto object-contain rounded shadow-sm" />`
+          ? `<img src="${data.imageUrl}" alt="${data.cardNo}" referrerpolicy="no-referrer" class="h-20 mx-auto object-contain rounded shadow-sm" />`
           : `<span class="text-xs text-gray-400">No Image</span>`;
 
         tbody.innerHTML = `
