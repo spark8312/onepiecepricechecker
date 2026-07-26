@@ -130,14 +130,14 @@ def fetch_card_prices(card: str):
             jpy = item["priceJpy"]
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
             
-            # Form official English Bandai CDN URL variants
+            # Using official English Bandai CDN host
             if total_items > 1 and idx < total_items - 1:
                 p_suffix = f"_p{total_items - 1 - idx}"
-                image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}{p_suffix}.png"
+                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}{p_suffix}.png"
             else:
-                image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
             
-            fallback_base_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+            fallback_base_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
 
             card_items.append({
                 "cardNo": formatted_card,
