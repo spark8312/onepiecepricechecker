@@ -23,24 +23,6 @@ def get_exchange_rates():
     except Exception:
         return 0.03, 4.40
 
-def get_official_card_image(card_no: str) -> str:
-    """Generates and verifies official card image URL from asia-en.onepiece-cardgame.com"""
-    formatted_card = card_no.strip().upper()
-    
-    # Official Asia-EN image URL template
-    official_img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
-    
-    try:
-        # Check if the image exists on the official server
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.head(official_img_url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            return official_img_url
-    except Exception as e:
-        print(f"Error checking official image: {e}")
-        
-    return None
-
 def scrape_yuyutei(card_no: str):
     try:
         formatted_card_no = card_no.strip().upper()
@@ -74,8 +56,8 @@ def scrape_yuyutei(card_no: str):
 def fetch_card_prices(card: str):
     formatted_card = card.strip().upper()
     
-    # Get official Asia-EN image
-    image_url = get_official_card_image(formatted_card)
+    # Construct Asia-EN Official Image URL directly
+    image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
     
     # Get exchange rates & Yuyutei price
     jpy_to_myr, usd_to_myr = get_exchange_rates()
