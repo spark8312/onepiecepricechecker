@@ -24,14 +24,20 @@ def get_exchange_rates():
         return 0.025, 4.40
 
 def translate_to_english(text: str) -> str:
+    # Extended translation list covering special printings, rarities, and characters
     translations = [
         ("レッドスーパーパラレル", " (Red Super Parallel)"),
         ("スーパーパラレル", " (Super Parallel / Manga Rare)"),
         ("特別パラレル", " (Special Parallel)"),
         ("パラレル", " (Parallel)"),
         ("リーダー", " (Leader)"),
+        ("ホイル箔押し", " (Parallel / Foil Stamped)"),
+        ("箔押し", " (Foil Stamped)"),
+        ("ホイル", " (Foil)"),
+        ("金文字", " (Gold Lettering)"),
+        ("プロモ", " (Promo)"),
         ("モンキー・D・ルフィ", "Monkey D. Luffy"),
-        ("ポートガス・D・エース", "Portgas.D.Ace"),
+        ("ポートガス・D・エース", "Portgas D. Ace"),
         ("サボ", "Sabo"),
         ("ヤマト", "Yamato"),
         ("シャンクス", "Shanks"),
@@ -53,8 +59,9 @@ def translate_to_english(text: str) -> str:
     for jp, en in translations:
         clean_text = clean_text.replace(jp, en)
         
+    # Strip remaining untranslated Japanese kanji/kana without removing English parens/tags like (LECAFIG)
     clean_text = re.sub(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]', '', clean_text)
-    clean_text = re.sub(r'[\(\[\{]\s*[\)\]\}]', '', clean_text)
+    clean_text = re.sub(r'\(\s*\)', '', clean_text)  # Remove empty parentheses
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
     return clean_text
 
@@ -81,7 +88,6 @@ def scrape_yuyutei_cards(search_query: str):
             box_text = box.text.upper()
             
             if formatted_query in box_text:
-                # Extract full card number (e.g. OP13-001, OP13-118)
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
@@ -136,7 +142,6 @@ def fetch_card_prices(card: str):
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
             full_card_no = item["cardNo"]
             
-            # Form official English Bandai CDN host using full card number
             if total_items > 1 and idx < total_items - 1:
                 p_suffix = f"_p{total_items - 1 - idx}"
                 image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{full_card_no}{p_suffix}.png"
