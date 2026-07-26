@@ -14,36 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Known set mappings based on Card Number prefixes
-SET_MAP = {
-    "ST01": "[ST-01] STARTER DECK -Straw Hat Crew-",
-    "ST02": "[ST-02] STARTER DECK -Worst Generation-",
-    "ST03": "[ST-03] STARTER DECK -Seven Warlords of the Sea-",
-    "ST04": "[ST-04] STARTER DECK -Animal Kingdom Pirates-",
-    "ST05": "[ST-05] STARTER DECK -ONE PIECE FILM Edition-",
-    "ST06": "[ST-06] STARTER DECK -Navy-",
-    "ST07": "[ST-07] STARTER DECK -Big Mom Pirates-",
-    "ST08": "[ST-08] STARTER DECK -Monkey D. Luffy-",
-    "ST09": "[ST-09] STARTER DECK -Yamato-",
-    "ST10": "[ST-10] STARTER DECK -Ultimate Deck- Three Captains",
-    "ST11": "[ST-11] STARTER DECK -Uta-",
-    "ST12": "[ST-12] STARTER DECK -Zoro & Sanji-",
-    "ST13": "[ST-13] 3D2Y",
-    "ST14": "[ST-14] 3D2Y",
-    "OP01": "[OP-01] BOOSTER PACK -ROMANCE DAWN-",
-    "OP02": "[OP-02] BOOSTER PACK -PARAMOUNT WAR-",
-    "OP03": "[OP-03] BOOSTER PACK -PILLARS OF STRENGTH-",
-    "OP04": "[OP-04] BOOSTER PACK -KINGDOMS OF INTRIGUE-",
-    "OP05": "[OP-05] BOOSTER PACK -AWAKENING OF THE NEW ERA-",
-    "OP06": "[OP-06] BOOSTER PACK -FLANKED BY LEGENDS-",
-    "OP07": "[OP-07] BOOSTER PACK -500 YEARS INTO THE FUTURE-",
-    "OP08": "[OP-08] BOOSTER PACK -TWO LEGENDS-",
-    "OP09": "[OP-09] BOOSTER PACK -THE FOUR EMPERORS-",
-    "EB01": "[EB-01] EXTRA BOOSTER -MEMORIAL COLLECTION-",
-}
-
-NAME_CACHE = {}
-
 def get_exchange_rates():
     try:
         res = requests.get("https://open.er-api.com/v6/latest/USD", timeout=5).json()
@@ -54,36 +24,33 @@ def get_exchange_rates():
     except Exception:
         return 0.025, 4.40
 
-def translate_jp_name(text: str) -> str:
-    """Translates Japanese card names from Yuyutei to English character names."""
+def auto_translate_jp_to_en(text: str) -> str:
     if not text:
         return ""
-    
-    if text in NAME_CACHE:
-        return NAME_CACHE[text]
-
     try:
-        # Clean out common rarity or type tags before translating
-        clean_text = re.sub(r'\(.*?\)|（.*?）|【.*?】|パラレル|平行|リーダー|LEADER', '', text).strip()
-        if not clean_text:
-            clean_text = text
-
-        encoded_text = urllib.parse.quote(clean_text)
+        clean_input = text.replace('（', '(').replace('）', ')').replace('【', '(').replace('】', ')')
+        encoded_text = urllib.parse.quote(clean_input)
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=en&dt=t&q={encoded_text}"
         
-        res = requests.get(url, timeout=5).json()
-        translated = "".join([segment[0] for segment in res[0] if segment[0]])
+        response = requests.get(url, timeout=5).json()
+        translated_text = "".join([segment[0] for segment in response[0] if segment[0]])
         
-        # Format names cleanly
-        translated = re.sub(r'\s+', ' ', translated).strip()
-        translated = translated.replace("Monkey. D. Luffy", "Monkey D. Luffy")
-        translated = translated.replace("Portgas. D. Ace", "Portgas D. Ace")
-        translated = translated.replace("Roronoa. Zoro", "Roronoa Zoro")
+        translated_text = translated_text.replace("Monkey. D. Luffy", "Monkey D. Luffy")
+        translated_text = re.sub(r'\(\s*\)', '', translated_text)
+        translated_text = re.sub(r'\(\s*\((.*?)\)\s*\)', r'(\1)', translated_text)
+        translated_text = re.sub(r'\s+', ' ', translated_text).strip()
         
-        NAME_CACHE[text] = translated
-        return translated
-    except Exception:
+        return translated_text
+    except Exception as e:
+        print(f"Translation error: {e}")
         return text
+
+def get_official_card_image_url(card_no: str, is_parallel: bool = False, p_index: int = 0) -> str:
+    """Generates the official Bandai One Piece TCG image URL."""
+    clean_no = card_no.strip().upper()
+    if is_parallel and p_index > 0:
+        return f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{clean_no}_p{p_index}.png"
+    return f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{clean_no}.png"
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
@@ -92,14 +59,13 @@ def scrape_yuyutei_cards(search_query: str):
         url = f"https://yuyu-tei.jp/sell/opc/s/search?search_word={formatted_query}"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
         }
         
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Remove unrelated pickup boxes
         for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
             extra.decompose()
             
@@ -109,24 +75,21 @@ def scrape_yuyutei_cards(search_query: str):
             box_text = box.text.upper()
             
             if formatted_query in box_text:
-                # 1. Extract exact Card No (e.g. ST01-001, ST01-012)
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # 2. Extract Japanese Card Name from the box header
                 raw_jp_name = ""
-                h4_tag = box.find(["h4", "h5", "a"])
+                h4_tag = box.find(["h4", "h5"])
                 if h4_tag and h4_tag.text.strip():
                     raw_jp_name = h4_tag.text.strip()
+                else:
+                    a_tags = box.find_all("a")
+                    for a in a_tags:
+                        text = a.text.strip()
+                        if text and not text.isdigit() and "円" not in text and "YEN" not in text.upper():
+                            raw_jp_name = text
+                            break
 
-                # 3. Determine variant tags (Parallel, Leader, etc.)
-                variant_tag = ""
-                if "パラレル" in raw_jp_name or "平行" in raw_jp_name:
-                    variant_tag = " (Parallel)"
-                elif "リーダー" in raw_jp_name or "LEADER" in raw_jp_name:
-                    variant_tag = " (Leader)"
-
-                # 4. Extract price in JPY
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
                 for p in price_patterns:
@@ -136,11 +99,14 @@ def scrape_yuyutei_cards(search_query: str):
                         break
                 
                 if card_price is not None:
+                    card_name_en = auto_translate_jp_to_en(raw_jp_name) if raw_jp_name else f"Card ({extracted_card_no})"
+                    is_parallel = "パラレル" in raw_jp_name or "parallel" in card_name_en.lower()
+                    
                     results.append({
                         "cardNo": extracted_card_no,
-                        "rawJpName": raw_jp_name,
-                        "variantTag": variant_tag,
-                        "priceJpy": card_price
+                        "cardName": card_name_en,
+                        "priceJpy": card_price,
+                        "isParallel": is_parallel
                     })
                     
     except Exception as e:
@@ -157,29 +123,22 @@ def fetch_card_prices(card: str):
     
     card_items = []
     if yuyutei_cards:
+        # Group cards by card number to assign alternate art suffixes (_p1, _p2)
         card_groups = {}
         for item in yuyutei_cards:
             c_no = item["cardNo"]
             card_groups.setdefault(c_no, []).append(item)
 
         for c_no, items in card_groups.items():
-            # Get Set Name based on Card Prefix (e.g. ST01 -> [ST-01] STARTER DECK -Straw Hat Crew-)
-            prefix = c_no.split("-")[0] if "-" in c_no else c_no[:4]
-            card_set = SET_MAP.get(prefix, f"ONE PIECE CARD GAME ({prefix})")
-
+            # Sort highest price first
             items.sort(key=lambda x: x["priceJpy"], reverse=True)
             total = len(items)
-
+            
             for idx, item in enumerate(items):
                 jpy = item["priceJpy"]
                 myr = round(jpy * jpy_to_myr, 2) if jpy else 0
                 
-                # Translate character name from Japanese
-                translated_name = translate_jp_name(item["rawJpName"])
-                char_name = translated_name if translated_name else c_no
-                display_name = f"{char_name}{item['variantTag']}"
-
-                # Image URL construction
+                # Assign official image URLs (_p1, _p2 for alternate arts, base url for standard art)
                 if total > 1 and idx < total - 1:
                     p_num = total - 1 - idx
                     img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}_p{p_num}.png"
@@ -190,8 +149,7 @@ def fetch_card_prices(card: str):
 
                 card_items.append({
                     "cardNo": c_no,
-                    "cardName": display_name,
-                    "cardSet": card_set,
+                    "cardName": item["cardName"],
                     "imageUrl": img_url,
                     "baseImageUrl": base_img_url,
                     "yuyutei_jpy": jpy,
