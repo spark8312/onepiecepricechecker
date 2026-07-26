@@ -13,7 +13,6 @@
       🏴‍☠️ One Piece TCG Price Finder
     </h1>
 
-    <!-- Search & Filter Controls -->
     <div class="flex flex-col sm:flex-row gap-4 mb-8">
       <form id="search-form" class="flex-1 flex gap-4">
         <input 
@@ -31,7 +30,6 @@
         </button>
       </form>
 
-      <!-- Sort Filter Dropdown -->
       <div class="flex items-center gap-2">
         <label for="sort-order" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Sort Price:</label>
         <select 
@@ -88,9 +86,16 @@
 
       let rowsHtml = '';
       sortedItems.forEach((item) => {
-        const imageHtml = item.imageUrl 
-          ? `<img src="${item.imageUrl}" alt="${item.cardNo}" referrerpolicy="no-referrer" class="h-24 mx-auto object-contain rounded shadow-sm" onerror="this.parentElement.innerHTML='<span class=\\'text-xs text-gray-400\\'>No Image</span>';" />`
-          : `<span class="text-xs text-gray-400">No Image</span>`;
+        // referrerpolicy="no-referrer" prevents Yuyutei from blocking the image request
+        const imageHtml = `
+          <img 
+            src="${item.imageUrl}" 
+            alt="${item.cardNo}" 
+            referrerpolicy="no-referrer" 
+            crossorigin="anonymous"
+            class="h-24 mx-auto object-contain rounded shadow-sm" 
+            onerror="if(this.src!=='${item.officialFallback}'){ this.src='${item.officialFallback}'; } else { this.parentElement.innerHTML='<span class=\\'text-xs text-gray-400\\'>No Image</span>'; }" 
+          />`;
 
         rowsHtml += `
           <tr class="hover:bg-gray-50 align-middle">
