@@ -23,38 +23,50 @@ def get_exchange_rates():
     except Exception:
         return 0.025, 4.40
 
-def translate_to_english(japanese_name: str) -> str:
-    """Translates common Japanese One Piece card names and variants into English."""
-    translations = {
-        "モンキー・D・ルフィ": "Monkey D. Luffy",
-        "ポートガス・D・エース": "Portgas.D.Ace",
-        "サボ": "Sabo",
-        "ヤマト": "Yamato",
-        "シャンクス": "Shanks",
-        "トラファルガー・ロー": "Trafalgar Law",
-        "ロロノア・ゾロ": "Roronoa Zoro",
-        "ナミ": "Nami",
-        "サンジ": "Sanji",
-        "ウタ": "Uta",
-        "ボア・ハンコック": "Boa Hancock",
-        "エドワード・ニューゲート": "Edward Newgate",
-        "ゴール・D・ロジャー": "Gol D. Roger",
-        "シャーロット・カタクリ": "Charlotte Katakuri",
-        "クザン": "Kuzan",
-        "ユースタス・キッド": "Eustass Kid",
-        "シルバーズ・レイリー": "Silvers Rayleigh",
-        "パラレル": "Parallel Art",
-        "レッドスーパーパラレル": "Red Super Parallel",
-        "スーパーパラレル": "Super Parallel (Manga Rare)",
-        "特別パラレル": "Special Parallel",
-        "リーダー": "Leader",
-    }
+def translate_to_english(text: str) -> str:
+    """
+    Translates common Japanese One Piece terms/rarities into English 
+    and cleans up any remaining Japanese characters.
+    """
+    translations = [
+        ("レッドスーパーパラレル", " (Red Super Parallel)"),
+        ("スーパーパラレル", " (Super Parallel / Manga Rare)"),
+        ("特別パラレル", " (Special Parallel)"),
+        ("パラレル", " (Parallel)"),
+        ("リーダー", " (Leader)"),
+        ("モンキー・D・ルフィ", "Monkey D. Luffy"),
+        ("ポートガス・D・エース", "Portgas.D.Ace"),
+        ("サボ", "Sabo"),
+        ("ヤマト", "Yamato"),
+        ("シャンクス", "Shanks"),
+        ("トラファルガー・ロー", "Trafalgar Law"),
+        ("ロロノア・ゾロ", "Roronoa Zoro"),
+        ("ナミ", "Nami"),
+        ("サンジ", "Sanji"),
+        ("ウタ", "Uta"),
+        ("ボア・ハンコック", "Boa Hancock"),
+        ("エドワード・ニューゲート", "Edward Newgate"),
+        ("ゴール・D・ロジャー", "Gol D. Roger"),
+        ("シャーロット・カタクリ", "Charlotte Katakuri"),
+        ("クザン", "Kuzan"),
+        ("ユースタス・キッド", "Eustass Kid"),
+        ("シルバーズ・レイリー", "Silvers Rayleigh"),
+    ]
     
-    english_name = japanese_name
-    for jp, en in translations.items():
-        english_name = english_name.replace(jp, en)
+    clean_text = text
+    for jp, en in translations:
+        clean_text = clean_text.replace(jp, en)
         
-    return english_name.strip()
+    # Strip out any remaining Japanese characters (Kanji, Hiragana, Katakana)
+    clean_text = re.sub(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]', '', clean_text)
+    
+    # Clean up empty brackets like () or [] left behind
+    clean_text = re.sub(r'[\(\[\{]\s*[\)\]\}]', '', clean_text)
+    
+    # Fix double spaces
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+    
+    return clean_text
 
 def scrape_yuyutei_cards(card_no: str):
     results = []
@@ -74,7 +86,6 @@ def scrape_yuyutei_cards(card_no: str):
         for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
             extra.decompose()
             
-        # Target search item containers
         card_boxes = soup.select(".card-unit, .card-product-box, div[class*='card-']")
         
         for box in card_boxes:
@@ -96,13 +107,22 @@ def scrape_yuyutei_cards(card_no: str):
                             
                 card_name = translate_to_english(jp_name) if jp_name else f"Card ({formatted_card_no})"
 
-                # 2. Extract Yuyutei Image URL directly
+                # 2. Extract Yuyutei Image URL (checks data-src, src, and srcset)
                 img_tag = box.find("img")
                 yuyutei_img_url = None
                 if img_tag:
-                    src = img_tag.get("src") or img_tag.get("data-src")
-                    if src:
-                        yuyutei_img_url = src if src.startswith("http") else f"https://yuyu-tei.jp{src}"
+                    src = (
+                        img_tag.get("data-src") or 
+                        img_tag.get("src") or 
+                        img_tag.get("data-original") or ""
+                    )
+                    
+                    if src.startswith("//"):
+                        yuyutei_img_url = f"https:{src}"
+                    elif src.startswith("http"):
+                        yuyutei_img_url = src
+                    elif src:
+                        yuyutei_img_url = f"https://yuyu-tei.jp{src}"
 
                 # 3. Extract Price
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
