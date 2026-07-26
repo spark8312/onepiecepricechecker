@@ -74,7 +74,7 @@ def scrape_card_detail_page(detail_url: str):
                 translated_set = auto_translate_jp_to_en(raw_set_jp)
                 card_set_en = f"[{set_code}] {translated_set}"
 
-            # Extract card name from main <h2>/<h1> heading on the detail page
+            # Extract card name from main heading on the detail page
             heading = soup.find(["h1", "h2", "h3"], class_=re.compile(r'title|card-title|name', re.I))
             if heading and heading.text.strip():
                 raw_jp_name = heading.text.strip()
@@ -112,6 +112,14 @@ def scrape_yuyutei_cards(search_query: str):
             if formatted_query in box_text:
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
+
+                # Find image directly inside the card box on Yuyutei
+                img_tag = box.find("img")
+                yyt_img_url = ""
+                if img_tag:
+                    raw_src = img_tag.get("src") or img_tag.get("data-src") or ""
+                    if raw_src:
+                        yyt_img_url = raw_src if raw_src.startswith("http") else f"https://yuyu-tei.jp{raw_src}"
 
                 # Find link to individual card detail page
                 detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
@@ -158,7 +166,8 @@ def scrape_yuyutei_cards(search_query: str):
                         "cardNo": extracted_card_no,
                         "cardName": final_card_name,
                         "cardSet": card_set_en,
-                        "priceJpy": card_price
+                        "priceJpy": card_price,
+                        "imageUrl": yyt_img_url
                     })
                     
     except Exception as e:
@@ -175,36 +184,23 @@ def fetch_card_prices(card: str):
     
     card_items = []
     if yuyutei_cards:
-        card_groups = {}
         for item in yuyutei_cards:
+            jpy = item["priceJpy"]
+            myr = round(jpy * jpy_to_myr, 2) if jpy else 0
+
+            # Fallback Bandai Asia English image URL if Yuyutei image isn't available
             c_no = item["cardNo"]
-            card_groups.setdefault(c_no, []).append(item)
+            fallback_img = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}.png"
 
-        for c_no, items in card_groups.items():
-            items.sort(key=lambda x: x["priceJpy"], reverse=True)
-            total = len(items)
-            
-            for idx, item in enumerate(items):
-                jpy = item["priceJpy"]
-                myr = round(jpy * jpy_to_myr, 2) if jpy else 0
-                
-                if total > 1 and idx < total - 1:
-                    p_num = total - 1 - idx
-                    img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}_p{p_num}.png"
-                else:
-                    img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}.png"
-
-                base_img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}.png"
-
-                card_items.append({
-                    "cardNo": c_no,
-                    "cardName": item["cardName"],
-                    "cardSet": item["cardSet"],
-                    "imageUrl": img_url,
-                    "baseImageUrl": base_img_url,
-                    "yuyutei_jpy": jpy,
-                    "myr_price": myr
-                })
+            card_items.append({
+                "cardNo": c_no,
+                "cardName": item["cardName"],
+                "cardSet": item["cardSet"],
+                "imageUrl": item["imageUrl"] if item["imageUrl"] else fallback_img,
+                "baseImageUrl": fallback_img,
+                "yuyutei_jpy": jpy,
+                "myr_price": myr
+            })
 
     return {
         "searchQuery": formatted_query,
