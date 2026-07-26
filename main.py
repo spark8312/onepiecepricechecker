@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 from bs4 import BeautifulSoup
 import re
+import urllib.parse
 
 app = FastAPI()
 
@@ -23,63 +24,33 @@ def get_exchange_rates():
     except Exception:
         return 0.025, 4.40
 
-def translate_yuyutei_name(jp_text: str) -> str:
-    """Translates Yuyutei card names directly while preserving their exact categorization."""
-    if not jp_text:
+def auto_translate_jp_to_en(text: str) -> str:
+    """Auto-translates any Japanese text to English dynamically using Google Translate API."""
+    if not text:
         return ""
-
-    # Common character names and variant terms
-    term_map = [
-        ("モンキー・D・ルフィ", "Monkey D. Luffy"),
-        ("ポートガス・D・エース", "Portgas D. Ace"),
-        ("トラファルガー・ロー", "Trafalgar Law"),
-        ("ロロノア・ゾロ", "Roronoa Zoro"),
-        ("ボア・ハンコック", "Boa Hancock"),
-        ("エドワード・ニューゲート", "Edward Newgate"),
-        ("ゴール・D・ロジャー", "Gol D. Roger"),
-        ("シャーロット・カタクリ", "Charlotte Katakuri"),
-        ("ユースタス・キッド", "Eustass Kid"),
-        ("シルバーズ・レイリー", "Silvers Rayleigh"),
-        ("サボ", "Sabo"),
-        ("ヤマト", "Yamato"),
-        ("シャンクス", "Shanks"),
-        ("ナミ", "Nami"),
-        ("サンジ", "Sanji"),
-        ("ウタ", "Uta"),
-        ("クザン", "Kuzan"),
-        ("バギー", "Buggy"),
-        ("スモーカー", "Smoker"),
-        ("クロコダイル", "Crocodile"),
-        ("レッドスーパーパラレル", " (Red Super Parallel)"),
-        ("スーパーパラレル", " (Super Parallel / Manga Rare)"),
-        ("特別パラレル", " (Special Parallel)"),
-        ("パラレル", " (Parallel)"),
-        ("リーダー", " (Leader)"),
-        ("ホイル箔押し", " (Parallel / Foil Stamped)"),
-        ("箔押し", " (Foil Stamped)"),
-        ("ホイル", " (Foil)"),
-        ("金文字", " (Gold Lettering)"),
-        ("プロモ", " (Promo)"),
-    ]
-
-    clean_text = jp_text
-
-    # Replace known terms
-    for jp, en in term_map:
-        clean_text = clean_text.replace(jp, en)
-
-    # Convert Japanese brackets 【 】 and （ ） to English ( )
-    clean_text = clean_text.replace('（', '(').replace('）', ')').replace('【', '(').replace('】', ')')
-
-    # Remove any remaining untranslated Japanese script safely
-    clean_text = re.sub(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]', '', clean_text)
-
-    # Clean up whitespace and empty/double parentheses
-    clean_text = re.sub(r'\(\s*\)', '', clean_text)
-    clean_text = re.sub(r'\(\s*\((.*?)\)\s*\)', r'(\1)', clean_text)
-    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-
-    return clean_text
+    
+    try:
+        # Pre-clean Japanese brackets to English parentheses
+        clean_input = text.replace('（', '(').replace('）', ')').replace('【', '(').replace('】', ')')
+        
+        encoded_text = urllib.parse.quote(clean_input)
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=en&dt=t&q={encoded_text}"
+        
+        response = requests.get(url, timeout=5).json()
+        
+        # Extract translated segments
+        translated_text = "".join([segment[0] for segment in response[0] if segment[0]])
+        
+        # Standardize common One Piece TCG terms and clean up double parentheses
+        translated_text = translated_text.replace("Monkey. D. Luffy", "Monkey D. Luffy")
+        translated_text = re.sub(r'\(\s*\)', '', translated_text)
+        translated_text = re.sub(r'\(\s*\((.*?)\)\s*\)', r'(\1)', translated_text)
+        translated_text = re.sub(r'\s+', ' ', translated_text).strip()
+        
+        return translated_text
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return text
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
@@ -128,10 +99,11 @@ def scrape_yuyutei_cards(search_query: str):
                         break
                 
                 if card_price is not None:
-                    card_name = translate_yuyutei_name(raw_jp_name) if raw_jp_name else f"Card ({extracted_card_no})"
+                    # Dynamically translate Yuyutei's full Japanese card title
+                    card_name_en = auto_translate_jp_to_en(raw_jp_name) if raw_jp_name else f"Card ({extracted_card_no})"
                     results.append({
                         "cardNo": extracted_card_no,
-                        "cardName": card_name,
+                        "cardName": card_name_en,
                         "priceJpy": card_price
                     })
                     
