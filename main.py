@@ -21,7 +21,15 @@ def get_exchange_rates():
         jpy_to_myr = usd_to_myr / rates.get("JPY", 155.0)
         return jpy_to_myr, usd_to_myr
     except Exception:
-        return 0.03, 4.40
+        return 0.025, 4.40
+
+def construct_official_image_url(card_no: str) -> str:
+    """
+    Formats the card number to match Asia-English official card image paths.
+    Example: ST09-001 -> https://asia-en.onepiece-cardgame.com/images/cardlist/card/ST09-001.png
+    """
+    card = card_no.strip().upper()
+    return f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{card}.png"
 
 def scrape_yuyutei(card_no: str):
     try:
@@ -36,8 +44,13 @@ def scrape_yuyutei(card_no: str):
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Extract Price from Yuyutei
-        price_patterns = soup.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
+        # Target ONLY the search result section (.card-list), ignore sidebar/pickup products
+        card_list = soup.find(class_=re.compile(r"card-list|P-card-list"))
+        
+        target_soup = card_list if card_list else soup
+        
+        # Look for prices inside the targeted card list block
+        price_patterns = target_soup.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
         prices = []
         for p in price_patterns:
             cleaned_val = re.sub(r'[^\d]', '', p)
@@ -56,8 +69,8 @@ def scrape_yuyutei(card_no: str):
 def fetch_card_prices(card: str):
     formatted_card = card.strip().upper()
     
-    # Construct Asia-EN Official Image URL directly
-    image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+    # Generate image URL
+    image_url = construct_official_image_url(formatted_card)
     
     # Get exchange rates & Yuyutei price
     jpy_to_myr, usd_to_myr = get_exchange_rates()
