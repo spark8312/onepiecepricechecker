@@ -1,161 +1,161 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import requests
-from bs4 import BeautifulSoup
-import re
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>One Piece TCG Price Checker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
 
-app = FastAPI()
+  <div class="max-w-6xl mx-auto bg-white rounded-lg shadow-md p-6">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">
+      🏴‍☠️ One Piece TCG Price Finder
+    </h1>
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    <div class="flex flex-col sm:flex-row gap-4 mb-8">
+      <form id="search-form" class="flex-1 flex gap-4">
+        <input 
+          type="text" 
+          id="card-number" 
+          placeholder="Enter Card No or Series (e.g. OP13, OP01-016, ST09-001)..." 
+          class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        />
+        <button 
+          type="submit" 
+          class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition"
+        >
+          Search
+        </button>
+      </form>
 
-def get_exchange_rates():
-    try:
-        res = requests.get("https://open.er-api.com/v6/latest/USD", timeout=5).json()
-        rates = res.get("rates", {})
-        usd_to_myr = rates.get("MYR", 4.40)
-        jpy_to_myr = usd_to_myr / rates.get("JPY", 155.0)
-        return jpy_to_myr, usd_to_myr
-    except Exception:
-        return 0.025, 4.40
+      <div class="flex items-center gap-2">
+        <label for="sort-order" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Sort Price:</label>
+        <select 
+          id="sort-order" 
+          class="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="high-low">High to Low ⬇️</option>
+          <option value="low-high">Low to High ⬆️</option>
+        </select>
+      </div>
+    </div>
 
-def translate_to_english(text: str) -> str:
-    translations = [
-        ("レッドスーパーパラレル", " (Red Super Parallel)"),
-        ("スーパーパラレル", " (Super Parallel / Manga Rare)"),
-        ("特別パラレル", " (Special Parallel)"),
-        ("パラレル", " (Parallel)"),
-        ("リーダー", " (Leader)"),
-        ("モンキー・D・ルフィ", "Monkey D. Luffy"),
-        ("ポートガス・D・エース", "Portgas.D.Ace"),
-        ("サボ", "Sabo"),
-        ("ヤマト", "Yamato"),
-        ("シャンクス", "Shanks"),
-        ("トラファルガー・ロー", "Trafalgar Law"),
-        ("ロロノア・ゾロ", "Roronoa Zoro"),
-        ("ナミ", "Nami"),
-        ("サンジ", "Sanji"),
-        ("ウタ", "Uta"),
-        ("ボア・ハンコック", "Boa Hancock"),
-        ("エドワード・ニューゲート", "Edward Newgate"),
-        ("ゴール・D・ロジャー", "Gol D. Roger"),
-        ("シャーロット・カタクリ", "Charlotte Katakuri"),
-        ("クザン", "Kuzan"),
-        ("ユースタス・キッド", "Eustass Kid"),
-        ("シルバーズ・レイリー", "Silvers Rayleigh"),
-    ]
-    
-    clean_text = text
-    for jp, en in translations:
-        clean_text = clean_text.replace(jp, en)
-        
-    clean_text = re.sub(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]', '', clean_text)
-    clean_text = re.sub(r'[\(\[\{]\s*[\)\]\}]', '', clean_text)
-    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    return clean_text
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-gray-800 text-white">
+            <th class="p-3 border text-center w-28">Card Image</th>
+            <th class="p-3 border">Card No</th>
+            <th class="p-3 border">Card Name (English)</th>
+            <th class="p-3 border">Yuyutei (JPY)</th>
+            <th class="p-3 border bg-emerald-700 whitespace-nowrap">Converted Price (MYR)</th>
+            <th class="p-3 border bg-blue-900 text-center whitespace-nowrap">Conversion Rate</th>
+          </tr>
+        </thead>
+        <tbody id="results-body">
+          <tr>
+            <td colspan="6" class="p-4 text-center text-gray-500">
+              Enter a card number or series above to search.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-def scrape_yuyutei_cards(search_query: str):
-    results = []
-    try:
-        formatted_query = search_query.strip().upper()
-        url = f"https://yuyu-tei.jp/sell/opc/s/search?search_word={formatted_query}"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
-        }
-        
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
-        
-        for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
-            extra.decompose()
-            
-        card_boxes = soup.select(".card-unit, .card-product-box, div[class*='card-']")
-        
-        for box in card_boxes:
-            box_text = box.text.upper()
-            
-            if formatted_query in box_text:
-                # Extract full card number (e.g. OP13-001, OP13-118)
-                card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
-                extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
+  <script>
+    const BACKEND_URL = "https://onepiecepricecheckerapi.onrender.com";
 
-                jp_name = None
-                h4_tag = box.find(["h4", "h5"])
-                if h4_tag and h4_tag.text.strip():
-                    jp_name = h4_tag.text.strip()
-                else:
-                    a_tags = box.find_all("a")
-                    for a in a_tags:
-                        text = a.text.strip()
-                        if text and not text.isdigit() and "円" not in text and "YEN" not in text.upper():
-                            jp_name = text
-                            break
-                            
-                card_name = translate_to_english(jp_name) if jp_name else f"Card ({extracted_card_no})"
+    const form = document.getElementById('search-form');
+    const tbody = document.getElementById('results-body');
+    const sortSelect = document.getElementById('sort-order');
 
-                price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
-                card_price = None
-                for p in price_patterns:
-                    cleaned_val = re.sub(r'[^\d]', '', p)
-                    if cleaned_val.isdigit():
-                        card_price = float(cleaned_val)
-                        break
-                
-                if card_price is not None:
-                    results.append({
-                        "cardNo": extracted_card_no,
-                        "cardName": card_name,
-                        "priceJpy": card_price
-                    })
-                    
-    except Exception as e:
-        print(f"Error scraping Yuyutei: {e}")
-        
-    return results
+    let currentItems = [];
+    let currentConversionRate = 0;
 
-@app.get("/api/prices")
-def fetch_card_prices(card: str):
-    formatted_query = card.strip().upper()
-    jpy_to_myr, usd_to_myr = get_exchange_rates()
-    
-    yuyutei_cards = scrape_yuyutei_cards(formatted_query)
-    
-    card_items = []
-    if yuyutei_cards:
-        yuyutei_cards.sort(key=lambda x: x["priceJpy"], reverse=True)
-        total_items = len(yuyutei_cards)
-        
-        for idx, item in enumerate(yuyutei_cards):
-            jpy = item["priceJpy"]
-            myr = round(jpy * jpy_to_myr, 2) if jpy else 0
-            full_card_no = item["cardNo"]
-            
-            # Form official English Bandai CDN host using full card number
-            if total_items > 1 and idx < total_items - 1:
-                p_suffix = f"_p{total_items - 1 - idx}"
-                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{full_card_no}{p_suffix}.png"
-            else:
-                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{full_card_no}.png"
-            
-            fallback_base_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{full_card_no}.png"
+    function renderTable() {
+      if (!currentItems || currentItems.length === 0) return;
 
-            card_items.append({
-                "cardNo": full_card_no,
-                "cardName": item["cardName"],
-                "imageUrl": image_url,
-                "baseImageUrl": fallback_base_url,
-                "yuyutei_jpy": jpy,
-                "myr_price": myr
-            })
+      const sortOrder = sortSelect.value;
+      
+      const sortedItems = [...currentItems].sort((a, b) => {
+        const priceA = a.yuyutei_jpy || 0;
+        const priceB = b.yuyutei_jpy || 0;
+        return sortOrder === 'high-low' ? priceB - priceA : priceA - priceB;
+      });
 
-    return {
-        "searchQuery": formatted_query,
-        "conversionRate": jpy_to_myr,
-        "items": card_items
+      const formattedRate = currentConversionRate ? `1 JPY = ${currentConversionRate.toFixed(5)} MYR` : 'N/A';
+
+      let rowsHtml = '';
+      sortedItems.forEach((item) => {
+        const imageHtml = `
+          <img 
+            src="${item.imageUrl}" 
+            alt="${item.cardNo}" 
+            loading="lazy"
+            class="h-24 mx-auto object-contain rounded shadow-sm" 
+            onerror="if(this.src !== '${item.baseImageUrl}'){ this.src = '${item.baseImageUrl}'; } else { this.parentElement.innerHTML='<span class=\\'text-xs text-gray-400\\'>No Image</span>'; }" 
+          />`;
+
+        rowsHtml += `
+          <tr class="hover:bg-gray-50 align-middle">
+            <td class="p-2 border text-center">${imageHtml}</td>
+            <td class="p-3 border font-semibold whitespace-nowrap">${item.cardNo}</td>
+            <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
+            <td class="p-3 border font-semibold">${item.yuyutei_jpy ? `¥${item.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
+            <td class="p-3 border font-bold text-emerald-600 bg-emerald-50 whitespace-nowrap">
+              ${item.myr_price ? `RM ${item.myr_price.toFixed(2)}` : 'N/A'}
+            </td>
+            <td class="p-3 border text-center text-xs text-gray-600 bg-blue-50 font-mono whitespace-nowrap">${formattedRate}</td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = rowsHtml;
     }
+
+    sortSelect.addEventListener('change', renderTable);
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const query = document.getElementById('card-number').value.trim();
+      
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
+            Fetching card data and conversion rates...
+          </td>
+        </tr>`;
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/prices?card=${encodeURIComponent(query)}`);
+        const data = await response.json();
+
+        if (!data.items || data.items.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" class="p-4 text-center text-gray-500">
+                No cards found for "${query}".
+              </td>
+            </tr>`;
+          return;
+        }
+
+        currentItems = data.items;
+        currentConversionRate = data.conversionRate || 0;
+        renderTable();
+
+      } catch (err) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="p-4 text-center text-red-500">
+              Error connecting to the price server.
+            </td>
+          </tr>`;
+      }
+    });
+  </script>
+</body>
+</html>
