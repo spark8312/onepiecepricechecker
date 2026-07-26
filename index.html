@@ -13,44 +13,91 @@
       🏴‍☠️ One Piece Card Game Price Checker
     </h1>
 
-    <div class="flex flex-col lg:flex-row gap-4 mb-8 items-center justify-between">
-      <!-- Search Form with Label -->
-      <form id="search-form" class="flex-1 flex items-center gap-3 w-full">
-        <label for="card-number" class="text-sm font-semibold text-gray-700 whitespace-nowrap">
-          Enter Card No:
-        </label>
-        <input 
-          type="text" 
-          id="card-number" 
-          placeholder="e.g. OP13, OP01-016, ST01..." 
-          class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          required
-        />
-        <button 
-          type="submit" 
-          class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition"
-        >
-          Search
-        </button>
-      </form>
+    <!-- Search and Controls Section -->
+    <div class="flex flex-col gap-4 mb-8">
+      
+      <!-- Top Row: Search Form & Sort Options -->
+      <div class="flex flex-col lg:flex-row gap-4 items-center justify-between">
+        <form id="search-form" class="flex-1 flex items-center gap-3 w-full">
+          <label for="card-number" class="text-sm font-semibold text-gray-700 whitespace-nowrap">
+            Enter Card No:
+          </label>
+          <input 
+            type="text" 
+            id="card-number" 
+            placeholder="e.g. OP13, OP01-016, ST01..." 
+            class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <button 
+            type="submit" 
+            class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition shadow"
+          >
+            Search
+          </button>
+        </form>
 
-      <!-- Sorting Controls -->
-      <div class="flex items-center gap-2 w-full lg:w-auto justify-end">
-        <label for="sort-order" class="text-sm font-semibold text-gray-600 whitespace-nowrap">
-          Sort By:
-        </label>
-        <select 
-          id="sort-order" 
-          class="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="price-high-low">Price: High to Low ⬇️</option>
-          <option value="price-low-high">Price: Low to High ⬆️</option>
-          <option value="name-a-z">Card Name: A ➔ Z 🔤</option>
-          <option value="name-z-a">Card Name: Z ➔ A 🔠</option>
-        </select>
+        <div class="flex items-center gap-2 w-full lg:w-auto justify-end">
+          <label for="sort-order" class="text-sm font-semibold text-gray-600 whitespace-nowrap">
+            Sort By:
+          </label>
+          <select 
+            id="sort-order" 
+            class="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="price-high-low">Price: High to Low ⬇️</option>
+            <option value="price-low-high">Price: Low to High ⬆️</option>
+            <option value="name-a-z">Card Name: A ➔ Z 🔤</option>
+            <option value="name-z-a">Card Name: Z ➔ A 🔠</option>
+          </select>
+        </div>
       </div>
+
+      <!-- Bottom Row: Currency & Custom Rate Controls -->
+      <div class="flex flex-wrap items-center gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <div class="flex items-center gap-2">
+          <label for="currency-select" class="text-sm font-semibold text-gray-700 whitespace-nowrap">
+            Target Currency:
+          </label>
+          <select 
+            id="currency-select" 
+            class="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="MYR" selected>MYR - Malaysian Ringgit (🇲🇾)</option>
+            <option value="SGD">SGD - Singapore Dollar (🇸🇬)</option>
+            <option value="THB">THB - Thai Baht (🇹🇭)</option>
+            <option value="IDR">IDR - Indonesian Rupiah (🇮🇩)</option>
+            <option value="PHP">PHP - Philippine Peso (🇵🇭)</option>
+            <option value="VND">VND - Vietnamese Dong (🇻🇳)</option>
+            <option value="TWD">TWD - New Taiwan Dollar (🇹🇼)</option>
+            <option value="HKD">HKD - Hong Kong Dollar (🇭🇰)</option>
+            <option value="KRW">KRW - South Korean Won (🇰🇷)</option>
+            <option value="INR">INR - Indian Rupee (🇮🇳)</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <label for="conversion-rate-input" class="text-sm font-semibold text-gray-700 whitespace-nowrap">
+            1 JPY =
+          </label>
+          <input 
+            type="number" 
+            id="conversion-rate-input" 
+            step="0.0000001" 
+            placeholder="0.00" 
+            class="w-36 border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <span id="currency-label" class="text-sm font-bold text-gray-600">MYR</span>
+        </div>
+
+        <span class="text-xs text-gray-500 italic ml-auto">
+          💡 You can edit the rate manually before or after searching.
+        </span>
+      </div>
+
     </div>
 
+    <!-- Results Table -->
     <div class="overflow-x-auto">
       <table class="w-full text-left border-collapse">
         <thead>
@@ -60,8 +107,8 @@
             <th class="p-3 border">Card Name</th>
             <th class="p-3 border">Card Set</th>
             <th class="p-3 border">Yuyutei (JPY)</th>
-            <th class="p-3 border bg-emerald-700 whitespace-nowrap">Converted Price (MYR)</th>
-            <th class="p-3 border bg-blue-900 text-center whitespace-nowrap">Conversion Rate</th>
+            <th class="p-3 border bg-emerald-700 whitespace-nowrap" id="table-header-converted">Converted Price</th>
+            <th class="p-3 border bg-blue-900 text-center whitespace-nowrap">Applied Rate</th>
           </tr>
         </thead>
         <tbody id="results-body">
@@ -81,15 +128,48 @@
     const form = document.getElementById('search-form');
     const tbody = document.getElementById('results-body');
     const sortSelect = document.getElementById('sort-order');
+    const currencySelect = document.getElementById('currency-select');
+    const rateInput = document.getElementById('conversion-rate-input');
+    const currencyLabel = document.getElementById('currency-label');
+    const tableHeaderConverted = document.getElementById('table-header-converted');
 
     let currentItems = [];
-    let currentConversionRate = 0;
+    let exchangeRatesCache = {};
+
+    // Fetch exchange rates directly for selected Asian currency
+    async function updateCurrencyRate() {
+      const selectedCurrency = currencySelect.value;
+      currencyLabel.textContent = selectedCurrency;
+      tableHeaderConverted.textContent = `Converted Price (${selectedCurrency})`;
+
+      try {
+        if (!exchangeRatesCache[selectedCurrency]) {
+          const res = await fetch('https://open.er-api.com/v6/latest/JPY');
+          const data = await res.json();
+          if (data && data.rates) {
+            exchangeRatesCache = data.rates;
+          }
+        }
+
+        if (exchangeRatesCache[selectedCurrency]) {
+          rateInput.value = exchangeRatesCache[selectedCurrency];
+        }
+      } catch (e) {
+        console.error("Failed to fetch exchange rates:", e);
+      }
+
+      if (currentItems.length > 0) {
+        renderTable();
+      }
+    }
 
     function renderTable() {
       if (!currentItems || currentItems.length === 0) return;
 
       const sortOption = sortSelect.value;
-      
+      const customRate = parseFloat(rateInput.value) || 0;
+      const currency = currencySelect.value;
+
       const sortedItems = [...currentItems].sort((a, b) => {
         if (sortOption === 'price-high-low') {
           return (b.yuyutei_jpy || 0) - (a.yuyutei_jpy || 0);
@@ -103,10 +183,13 @@
         return 0;
       });
 
-      const formattedRate = currentConversionRate ? `1 JPY = ${currentConversionRate.toFixed(5)} MYR` : 'N/A';
+      const formattedRateText = customRate ? `1 JPY = ${customRate} ${currency}` : 'N/A';
 
       let rowsHtml = '';
       sortedItems.forEach((item) => {
+        const jpyPrice = item.yuyutei_jpy || 0;
+        const convertedPrice = jpyPrice ? (jpyPrice * customRate).toFixed(2) : 'N/A';
+
         const imageHtml = `
           <img 
             src="${item.imageUrl}" 
@@ -123,11 +206,11 @@
             <td class="p-3 border font-semibold whitespace-nowrap">${item.cardNo}</td>
             <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
             <td class="p-3 border text-sm text-gray-600">${item.cardSet || 'N/A'}</td>
-            <td class="p-3 border font-semibold">${item.yuyutei_jpy ? `¥${item.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
+            <td class="p-3 border font-semibold">${jpyPrice ? `¥${jpyPrice.toLocaleString()}` : 'N/A'}</td>
             <td class="p-3 border font-bold text-emerald-600 bg-emerald-50 whitespace-nowrap">
-              ${item.myr_price ? `RM ${item.myr_price.toFixed(2)}` : 'N/A'}
+              ${jpyPrice ? `${currency} ${parseFloat(convertedPrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : 'N/A'}
             </td>
-            <td class="p-3 border text-center text-xs text-gray-600 bg-blue-50 font-mono whitespace-nowrap">${formattedRate}</td>
+            <td class="p-3 border text-center text-xs text-gray-600 bg-blue-50 font-mono whitespace-nowrap">${formattedRateText}</td>
           </tr>
         `;
       });
@@ -135,7 +218,13 @@
       tbody.innerHTML = rowsHtml;
     }
 
+    // Event listeners
+    currencySelect.addEventListener('change', updateCurrencyRate);
+    rateInput.addEventListener('input', renderTable);
     sortSelect.addEventListener('change', renderTable);
+
+    // Initial rate load
+    updateCurrencyRate();
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -144,7 +233,7 @@
       tbody.innerHTML = `
         <tr>
           <td colspan="7" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
-            Fetching card data and conversion rates...
+            Fetching card data from Yuyutei...
           </td>
         </tr>`;
 
@@ -163,7 +252,6 @@
         }
 
         currentItems = data.items;
-        currentConversionRate = data.conversionRate || 0;
         renderTable();
 
       } catch (err) {
