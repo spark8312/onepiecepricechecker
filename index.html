@@ -13,21 +13,36 @@
       🏴‍☠️ One Piece TCG Price Finder
     </h1>
 
-    <form id="search-form" class="flex gap-4 mb-8">
-      <input 
-        type="text" 
-        id="card-number" 
-        placeholder="Enter Card No (e.g. ST09-001, OP01-016, OP13-118)..." 
-        class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        required
-      />
-      <button 
-        type="submit" 
-        class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition"
-      >
-        Search
-      </button>
-    </form>
+    <!-- Search & Filter Controls -->
+    <div class="flex flex-col sm:flex-row gap-4 mb-8">
+      <form id="search-form" class="flex-1 flex gap-4">
+        <input 
+          type="text" 
+          id="card-number" 
+          placeholder="Enter Card No (e.g. ST09-001, OP01-016, OP13-118)..." 
+          class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        />
+        <button 
+          type="submit" 
+          class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg transition"
+        >
+          Search
+        </button>
+      </form>
+
+      <!-- Price Sort Filter Button -->
+      <div class="flex items-center gap-2">
+        <label for="sort-order" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Sort Price:</label>
+        <select 
+          id="sort-order" 
+          class="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="high-low">High to Low ⬇️</option>
+          <option value="low-high">Low to High ⬆️</option>
+        </select>
+      </div>
+    </div>
 
     <div class="overflow-x-auto">
       <table class="w-full text-left border-collapse">
@@ -56,6 +71,52 @@
 
     const form = document.getElementById('search-form');
     const tbody = document.getElementById('results-body');
+    const sortSelect = document.getElementById('sort-order');
+
+    let currentItems = [];
+
+    function renderTable() {
+      if (!currentItems || currentItems.length === 0) return;
+
+      const sortOrder = sortSelect.value;
+      
+      // Sort items dynamically based on selection
+      const sortedItems = [...currentItems].sort((a, b) => {
+        const priceA = a.yuyutei_jpy || 0;
+        const priceB = b.yuyutei_jpy || 0;
+        return sortOrder === 'high-low' ? priceB - priceA : priceA - priceB;
+      });
+
+      let rowsHtml = '';
+      sortedItems.forEach((item) => {
+        const fallbackSrc = item.fallbackImageUrl || '';
+        const imageHtml = `
+          <img 
+            src="${item.fallbackImageUrl ? item.fallbackImageUrl : item.officialImageUrl}" 
+            alt="${item.cardNo}" 
+            referrerpolicy="no-referrer" 
+            onerror="if('${fallbackSrc}'){ this.src='${fallbackSrc}'; this.onerror=null; } else { this.parentElement.innerHTML='<span class=\'text-xs text-gray-400\'>No Image</span>'; }" 
+            class="h-24 mx-auto object-contain rounded shadow-sm" 
+          />`;
+
+        rowsHtml += `
+          <tr class="hover:bg-gray-50 align-middle">
+            <td class="p-2 border text-center">${imageHtml}</td>
+            <td class="p-3 border font-semibold">${item.cardNo}</td>
+            <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
+            <td class="p-3 border font-semibold">${item.yuyutei_jpy ? `¥${item.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
+            <td class="p-3 border font-bold text-emerald-600 bg-emerald-50">
+              ${item.myr_price ? `RM ${item.myr_price.toFixed(2)}` : 'N/A'}
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    // Re-sort when user changes the dropdown option
+    sortSelect.addEventListener('change', renderTable);
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -82,32 +143,8 @@
           return;
         }
 
-        let rowsHtml = '';
-        data.items.forEach((item) => {
-          const fallbackSrc = item.fallbackImageUrl || '';
-          const imageHtml = `
-            <img 
-              src="${item.officialImageUrl}" 
-              alt="${item.cardNo}" 
-              referrerpolicy="no-referrer" 
-              onerror="if('${fallbackSrc}'){ this.src='${fallbackSrc}'; this.onerror=null; } else { this.parentElement.innerHTML='<span class=\'text-xs text-gray-400\'>No Image</span>'; }" 
-              class="h-24 mx-auto object-contain rounded shadow-sm" 
-            />`;
-
-          rowsHtml += `
-            <tr class="hover:bg-gray-50 align-middle">
-              <td class="p-2 border text-center">${imageHtml}</td>
-              <td class="p-3 border font-semibold">${item.cardNo}</td>
-              <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
-              <td class="p-3 border">${item.yuyutei_jpy ? `¥${item.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
-              <td class="p-3 border font-bold text-emerald-600 bg-emerald-50">
-                ${item.myr_price !== 'N/A' ? `RM ${item.myr_price}` : 'N/A'}
-              </td>
-            </tr>
-          `;
-        });
-
-        tbody.innerHTML = rowsHtml;
+        currentItems = data.items;
+        renderTable();
 
       } catch (err) {
         tbody.innerHTML = `
