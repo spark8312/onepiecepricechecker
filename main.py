@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 from bs4 import BeautifulSoup
 import re
-import html
 import urllib.parse
 
 app = FastAPI()
@@ -15,8 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OFFICIAL_SET_CACHE = {}
-
 def get_exchange_rates():
     try:
         res = requests.get("https://open.er-api.com/v6/latest/USD", timeout=5).json()
@@ -26,54 +23,6 @@ def get_exchange_rates():
         return jpy_to_myr, usd_to_myr
     except Exception:
         return 0.025, 4.40
-
-def fetch_official_set_map():
-    """Scrapes set names from Bandai Asia-English official site and maps normalized series codes."""
-    global OFFICIAL_SET_CACHE
-    if OFFICIAL_SET_CACHE:
-        return OFFICIAL_SET_CACHE
-
-    try:
-        url = "https://asia-en.onepiece-cardgame.com/cardlist/"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        res = requests.get(url, headers=headers, timeout=8)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, "html.parser")
-            
-            # Extract set names from select/option tags or series list elements
-            options = soup.find_all("option")
-            for opt in options:
-                raw_text = html.unescape(opt.decode_contents())
-                clean_set_name = re.sub(r'<[^>]+>', ' ', raw_text)
-                clean_set_name = re.sub(r'\s+', ' ', clean_set_name).strip()
-
-                if clean_set_name and "ALL" not in clean_set_name.upper():
-                    # Find set code brackets e.g. [OP-05], [ST-01], [EB-01], [PRB-01]
-                    codes = re.findall(r'\[(.*?)\]', clean_set_name)
-                    for code in codes:
-                        norm_code = code.replace("-", "").upper()  # OP05
-                        OFFICIAL_SET_CACHE[norm_code] = clean_set_name
-                        OFFICIAL_SET_CACHE[code.upper()] = clean_set_name  # OP-05
-
-    except Exception as e:
-        print(f"Error fetching official set map: {e}")
-
-    return OFFICIAL_SET_CACHE
-
-def get_official_set_name(card_no: str) -> str:
-    """Matches YYT card number series code against official site set map."""
-    official_sets = fetch_official_set_map()
-    
-    # Extract series code prefix (e.g. OP13 from OP13-001, ST01 from ST01-012)
-    match = re.match(r'^([A-Z]{2,3}\d{2})', card_no.strip().upper())
-    if match:
-        series_code = match.group(1)
-        if series_code in official_sets:
-            return official_sets[series_code]
-            
-    return "N/A"
 
 def auto_translate_jp_to_en(text: str) -> str:
     if not text:
@@ -109,10 +58,18 @@ def scrape_yuyutei_cards(search_query: str):
         
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        
+
+        # Decompose extra unwanted sections first
         for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
             extra.decompose()
-            
+
+        # Parse set headers / titles dynamically from Yuyutei
+        default_set_jp = ""
+        # Try finding set heading blocks or breadcrumbs on Yuyutei search page
+        set_header = soup.select_one(".title-main, .heading-title, .breadcrumb, h2, h3")
+        if set_header:
+            default_set_jp = set_header.text.strip()
+
         card_boxes = soup.select(".card-unit, .card-product-box, div[class*='card-']")
         
         for box in card_boxes:
@@ -122,8 +79,20 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Extract set directly from official Bandai map using series code (e.g. ST01, OP13)
-                card_set_en = get_official_set_name(extracted_card_no)
+                # Find set name directly from parent category/group header in YYT markup if present
+                card_set_raw = ""
+                parent_group = box.find_parent(class_=re.compile(r'group|category|pack|box|section'))
+                if parent_group:
+                    group_head = parent_group.find(["h2", "h3", "h4", "caption", "div"], class_=re.compile(r'title|head|name'))
+                    if group_head:
+                        card_set_raw = group_head.text.strip()
+
+                if not card_set_raw:
+                    card_set_raw = default_set_jp
+
+                # Clean up YYT set title text and translate
+                clean_set_raw = re.sub(r'[\r\n\t]+', ' ', card_set_raw).strip()
+                translated_set = auto_translate_jp_to_en(clean_set_raw) if clean_set_raw else "N/A"
 
                 raw_jp_name = ""
                 h4_tag = box.find(["h4", "h5"])
@@ -151,7 +120,7 @@ def scrape_yuyutei_cards(search_query: str):
                     results.append({
                         "cardNo": extracted_card_no,
                         "cardName": card_name_en,
-                        "cardSet": card_set_en,
+                        "cardSet": translated_set,
                         "priceJpy": card_price
                     })
                     
