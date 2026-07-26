@@ -48,6 +48,7 @@ def auto_translate_jp_to_en(text: str) -> str:
         return text
 
 def scrape_card_detail_page(detail_url: str):
+    """Fetches Card Set and Card Name directly from Yuyutei individual card page."""
     if detail_url in DETAIL_CACHE:
         return DETAIL_CACHE[detail_url]
 
@@ -110,11 +111,15 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Extract Yuyutei image URL properly
-                img_tag = box.find("img")
+                # Robust Yuyutei image extraction (handles src, data-src, data-original)
                 yyt_img_url = ""
+                img_tag = box.find("img")
                 if img_tag:
-                    raw_src = img_tag.get("src") or img_tag.get("data-src") or ""
+                    raw_src = (
+                        img_tag.get("data-original") or 
+                        img_tag.get("data-src") or 
+                        img_tag.get("src") or ""
+                    )
                     if raw_src:
                         if raw_src.startswith("//"):
                             yyt_img_url = f"https:{raw_src}"
@@ -123,7 +128,7 @@ def scrape_yuyutei_cards(search_query: str):
                         else:
                             yyt_img_url = f"https://card.yuyu-tei.jp{raw_src}" if "/opc/" in raw_src else f"https://yuyu-tei.jp{raw_src}"
 
-                # Extract detail URL
+                # Find link to individual card detail page
                 detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
                 card_set_en = "ONE PIECE Card Game"
                 card_name_en = ""
