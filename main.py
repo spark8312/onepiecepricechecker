@@ -58,11 +58,11 @@ def translate_to_english(text: str) -> str:
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
     return clean_text
 
-def scrape_yuyutei_cards(card_no: str):
+def scrape_yuyutei_cards(search_query: str):
     results = []
     try:
-        formatted_card_no = card_no.strip().upper()
-        url = f"https://yuyu-tei.jp/sell/opc/s/search?search_word={formatted_card_no}"
+        formatted_query = search_query.strip().upper()
+        url = f"https://yuyu-tei.jp/sell/opc/s/search?search_word={formatted_query}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -80,7 +80,11 @@ def scrape_yuyutei_cards(card_no: str):
         for box in card_boxes:
             box_text = box.text.upper()
             
-            if formatted_card_no in box_text:
+            if formatted_query in box_text:
+                # Extract full card number (e.g. OP13-001, OP13-118)
+                card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
+                extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
+
                 jp_name = None
                 h4_tag = box.find(["h4", "h5"])
                 if h4_tag and h4_tag.text.strip():
@@ -93,7 +97,7 @@ def scrape_yuyutei_cards(card_no: str):
                             jp_name = text
                             break
                             
-                card_name = translate_to_english(jp_name) if jp_name else f"Card ({formatted_card_no})"
+                card_name = translate_to_english(jp_name) if jp_name else f"Card ({extracted_card_no})"
 
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
@@ -105,6 +109,7 @@ def scrape_yuyutei_cards(card_no: str):
                 
                 if card_price is not None:
                     results.append({
+                        "cardNo": extracted_card_no,
                         "cardName": card_name,
                         "priceJpy": card_price
                     })
@@ -116,10 +121,10 @@ def scrape_yuyutei_cards(card_no: str):
 
 @app.get("/api/prices")
 def fetch_card_prices(card: str):
-    formatted_card = card.strip().upper()
+    formatted_query = card.strip().upper()
     jpy_to_myr, usd_to_myr = get_exchange_rates()
     
-    yuyutei_cards = scrape_yuyutei_cards(formatted_card)
+    yuyutei_cards = scrape_yuyutei_cards(formatted_query)
     
     card_items = []
     if yuyutei_cards:
@@ -129,18 +134,19 @@ def fetch_card_prices(card: str):
         for idx, item in enumerate(yuyutei_cards):
             jpy = item["priceJpy"]
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
+            full_card_no = item["cardNo"]
             
-            # Using official English Bandai CDN host
+            # Form official English Bandai CDN host using full card number
             if total_items > 1 and idx < total_items - 1:
                 p_suffix = f"_p{total_items - 1 - idx}"
-                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}{p_suffix}.png"
+                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{full_card_no}{p_suffix}.png"
             else:
-                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{full_card_no}.png"
             
-            fallback_base_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+            fallback_base_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{full_card_no}.png"
 
             card_items.append({
-                "cardNo": formatted_card,
+                "cardNo": full_card_no,
                 "cardName": item["cardName"],
                 "imageUrl": image_url,
                 "baseImageUrl": fallback_base_url,
@@ -149,7 +155,7 @@ def fetch_card_prices(card: str):
             })
 
     return {
-        "cardNo": formatted_card,
+        "searchQuery": formatted_query,
         "conversionRate": jpy_to_myr,
         "items": card_items
     }
