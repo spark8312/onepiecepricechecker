@@ -23,14 +23,12 @@ def get_exchange_rates():
     except Exception:
         return 0.025, 4.40
 
-def scrape_yuyutei_data(card_no: str):
+def scrape_yuyutei_cards(card_no: str):
     """
-    Extracts price and image directly from Yuyutei's exact card search result row,
-    avoiding sidebar items like 'Latest release' or 'Featured Products'.
+    Scrapes all card listings on Yuyutei matching the given card number.
+    Returns a list of dicts: [{'name': ..., 'price_jpy': ..., 'img_url': ...}]
     """
-    price = None
-    yuyutei_img_url = None
-    
+    results = []
     try:
         formatted_card_no = card_no.strip().upper()
         url = f"https://yuyu-tei.jp/sell/opc/s/search?search_word={formatted_card_no}"
@@ -43,62 +41,88 @@ def scrape_yuyutei_data(card_no: str):
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Look specifically for the card result unit containing the card code text
-        # Yuyutei card entries contain the card code in <span> or text node inside card-product-box/card-unit
-        card_boxes = soup.select(".card-unit, .card-product-box, .card-list3 .col-md-6, div[class*='card-']")
+        # Decompose sidebar/extra recommendation containers to avoid irrelevant cards
+        for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
+            extra.decompose()
+            
+        # Target search result item boxes
+        card_boxes = soup.select(".card-unit, .card-product-box, div[class*='card-']")
         
-        target_box = None
         for box in card_boxes:
-            if formatted_card_no in box.text.upper():
-                target_box = box
-                break
-                
-        # If no specific container match, isolate main content list area and exclude sidebar/pickup
-        if not target_box:
-            # Remove sidebar sections from parsing
-            for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
-                extra.decompose()
-            target_box = soup
+            box_text = box.text.upper()
             
-        # Extract Image from Yuyutei search result
-        img_tag = target_box.find("img", src=re.compile(r"/card/"))
-        if img_tag and img_tag.get("src"):
-            src = img_tag["src"]
-            yuyutei_img_url = src if src.startswith("http") else f"https://yuyu-tei.jp{src}"
+            # Verify the card number is actually present inside this box
+            if formatted_card_no in box_text:
+                # Extract Card Name
+                name_tag = box.find(["h4", "h5", "a", "p"], class_=re.compile(r"title|name|card-title"))
+                card_name = name_tag.text.strip() if name_tag else "One Piece Card"
+                
+                # Extract Image URL
+                img_tag = box.find("img", src=re.compile(r"/card/"))
+                yuyutei_img_url = None
+                if img_tag and img_tag.get("src"):
+                    src = img_tag["src"]
+                    yuyutei_img_url = src if src.startswith("http") else f"https://yuyu-tei.jp{src}"
 
-        # Extract Price from Yuyutei search result
-        price_patterns = target_box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
-        prices = []
-        for p in price_patterns:
-            cleaned_val = re.sub(r'[^\d]', '', p)
-            if cleaned_val.isdigit():
-                prices.append(float(cleaned_val))
+                # Extract Price
+                price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
+                card_price = None
+                for p in price_patterns:
+                    cleaned_val = re.sub(r'[^\d]', '', p)
+                    if cleaned_val.isdigit():
+                        card_price = float(cleaned_val)
+                        break
                 
-        if prices:
-            price = min(prices)
-            
+                if card_price is not None:
+                    results.append({
+                        "cardName": card_name,
+                        "priceJpy": card_price,
+                        "fallbackImageUrl": yuyutei_img_url
+                    })
+                    
     except Exception as e:
         print(f"Error scraping Yuyutei: {e}")
         
-    return price, yuyutei_img_url
+    return results
 
 @app.get("/api/prices")
 def fetch_card_prices(card: str):
     formatted_card = card.strip().upper()
     
-    # Official Asia-EN image URL
+    # Official Asia-EN image URL (default)
     official_image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
     
-    # Get exchange rates & Yuyutei data
+    # Get exchange rates
     jpy_to_myr, usd_to_myr = get_exchange_rates()
-    yuyutei_jpy, yuyutei_img_url = scrape_yuyutei_data(formatted_card)
     
-    myr_price = (yuyutei_jpy * jpy_to_myr) if yuyutei_jpy else None
+    # Scrape all matching card variants from Yuyutei
+    yuyutei_cards = scrape_yuyutei_cards(formatted_card)
+    
+    card_items = []
+    if yuyutei_cards:
+        for item in yuyutei_cards:
+            jpy = item["priceJpy"]
+            myr = round(jpy * jpy_to_myr, 2) if jpy else "N/A"
+            card_items.append({
+                "cardNo": formatted_card,
+                "cardName": item["cardName"],
+                "officialImageUrl": official_image_url,
+                "fallbackImageUrl": item["fallbackImageUrl"],
+                "yuyutei_jpy": jpy,
+                "myr_price": myr
+            })
+    else:
+        # Fallback single row if no items found on Yuyutei
+        card_items.append({
+            "cardNo": formatted_card,
+            "cardName": "N/A",
+            "officialImageUrl": official_image_url,
+            "fallbackImageUrl": None,
+            "yuyutei_jpy": None,
+            "myr_price": "N/A"
+        })
 
     return {
         "cardNo": formatted_card,
-        "officialImageUrl": official_image_url,
-        "fallbackImageUrl": yuyutei_img_url,
-        "yuyutei_jpy": yuyutei_jpy,
-        "myr_price": round(myr_price, 2) if myr_price else "N/A"
+        "items": card_items
     }
