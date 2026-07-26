@@ -18,7 +18,7 @@
         <input 
           type="text" 
           id="card-number" 
-          placeholder="Enter Card No (e.g. ST09-001, OP01-016, OP13-118)..." 
+          placeholder="Enter Card No (e.g. ST01-001, OP01-016, OP13-118)..." 
           class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         />
@@ -50,8 +50,8 @@
             <th class="p-3 border">Card No</th>
             <th class="p-3 border">Card Name (English)</th>
             <th class="p-3 border">Yuyutei (JPY)</th>
-            <th class="p-3 border bg-blue-900 text-center">Conversion Rate</th>
-            <th class="p-3 border bg-emerald-700">Converted Price (MYR)</th>
+            <th class="p-3 border bg-blue-900 text-center whitespace-nowrap">Conversion Rate</th>
+            <th class="p-3 border bg-emerald-700 whitespace-nowrap">Converted Price (MYR)</th>
           </tr>
         </thead>
         <tbody id="results-body">
@@ -94,7 +94,7 @@
           <img 
             src="${item.imageUrl}" 
             alt="${item.cardNo}" 
-            referrerpolicy="no-referrer"
+            loading="lazy"
             class="h-24 mx-auto object-contain rounded shadow-sm" 
             onerror="if(this.src !== '${item.baseImageUrl}'){ this.src = '${item.baseImageUrl}'; } else { this.parentElement.innerHTML='<span class=\\'text-xs text-gray-400\\'>No Image</span>'; }" 
           />`;
@@ -105,8 +105,8 @@
             <td class="p-3 border font-semibold">${item.cardNo}</td>
             <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
             <td class="p-3 border font-semibold">${item.yuyutei_jpy ? `¥${item.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
-            <td class="p-3 border text-center text-xs text-gray-600 bg-blue-50 font-mono">${formattedRate}</td>
-            <td class="p-3 border font-bold text-emerald-600 bg-emerald-50">
+            <td class="p-3 border text-center text-xs text-gray-600 bg-blue-50 font-mono whitespace-nowrap">${formattedRate}</td>
+            <td class="p-3 border font-bold text-emerald-600 bg-emerald-50 whitespace-nowrap">
               ${item.myr_price ? `RM ${item.myr_price.toFixed(2)}` : 'N/A'}
             </td>
           </tr>
