@@ -48,7 +48,6 @@ def auto_translate_jp_to_en(text: str) -> str:
         return text
 
 def scrape_card_detail_page(detail_url: str):
-    """Fetches Card Set and Card Name directly from Yuyutei individual card page."""
     if detail_url in DETAIL_CACHE:
         return DETAIL_CACHE[detail_url]
 
@@ -65,7 +64,6 @@ def scrape_card_detail_page(detail_url: str):
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             
-            # Extract set name from <title> e.g., "... | [OP05] 主役のRank | ONE PIECE..."
             page_title = soup.title.text if soup.title else ""
             set_match = re.search(r'\[(.*?)\]\s*([^|]+)', page_title)
             if set_match:
@@ -74,7 +72,6 @@ def scrape_card_detail_page(detail_url: str):
                 translated_set = auto_translate_jp_to_en(raw_set_jp)
                 card_set_en = f"[{set_code}] {translated_set}"
 
-            # Extract card name from main heading on the detail page
             heading = soup.find(["h1", "h2", "h3"], class_=re.compile(r'title|card-title|name', re.I))
             if heading and heading.text.strip():
                 raw_jp_name = heading.text.strip()
@@ -113,17 +110,23 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Find image directly inside the card box on Yuyutei
+                # Extract Yuyutei image URL properly
                 img_tag = box.find("img")
                 yyt_img_url = ""
                 if img_tag:
                     raw_src = img_tag.get("src") or img_tag.get("data-src") or ""
                     if raw_src:
-                        yyt_img_url = raw_src if raw_src.startswith("http") else f"https://yuyu-tei.jp{raw_src}"
+                        if raw_src.startswith("//"):
+                            yyt_img_url = f"https:{raw_src}"
+                        elif raw_src.startswith("http"):
+                            yyt_img_url = raw_src
+                        else:
+                            yyt_img_url = f"https://card.yuyu-tei.jp{raw_src}" if "/opc/" in raw_src else f"https://yuyu-tei.jp{raw_src}"
 
-                # Find link to individual card detail page
+                # Extract detail URL
                 detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
                 card_set_en = "ONE PIECE Card Game"
+                card_name_en = ""
                 raw_jp_name = ""
 
                 if detail_link_tag and detail_link_tag.get("href"):
@@ -136,7 +139,6 @@ def scrape_yuyutei_cards(search_query: str):
                     if detail_data.get("cardName"):
                         card_name_en = detail_data["cardName"]
 
-                # Fallback card name extraction if detail page name wasn't found
                 if not raw_jp_name:
                     h4_tag = box.find(["h4", "h5"])
                     if h4_tag and h4_tag.text.strip():
@@ -158,7 +160,7 @@ def scrape_yuyutei_cards(search_query: str):
                         break
                 
                 if card_price is not None:
-                    final_card_name = card_name_en if 'card_name_en' in locals() and card_name_en else auto_translate_jp_to_en(raw_jp_name)
+                    final_card_name = card_name_en if card_name_en else auto_translate_jp_to_en(raw_jp_name)
                     if not final_card_name:
                         final_card_name = f"Card ({extracted_card_no})"
 
@@ -188,7 +190,6 @@ def fetch_card_prices(card: str):
             jpy = item["priceJpy"]
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
 
-            # Fallback Bandai Asia English image URL if Yuyutei image isn't available
             c_no = item["cardNo"]
             fallback_img = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}.png"
 
