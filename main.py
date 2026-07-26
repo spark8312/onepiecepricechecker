@@ -123,24 +123,21 @@ def fetch_card_prices(card: str):
     
     card_items = []
     if yuyutei_cards:
-        # Sort so highest price / rarest versions appear first
         yuyutei_cards.sort(key=lambda x: x["priceJpy"], reverse=True)
-        
         total_items = len(yuyutei_cards)
         
         for idx, item in enumerate(yuyutei_cards):
             jpy = item["priceJpy"]
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
             
-            # Construct Official Bandai CDN URLs
-            # Highest price variants get _p3 / _p2 / _p1 suffixes, lowest gets base card image
+            # Form official English Bandai CDN URL variants
             if total_items > 1 and idx < total_items - 1:
                 p_suffix = f"_p{total_items - 1 - idx}"
-                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}{p_suffix}.png"
+                image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}{p_suffix}.png"
             else:
-                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+                image_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
             
-            fallback_base_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+            fallback_base_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
 
             card_items.append({
                 "cardNo": formatted_card,
@@ -153,5 +150,6 @@ def fetch_card_prices(card: str):
 
     return {
         "cardNo": formatted_card,
+        "conversionRate": jpy_to_myr,
         "items": card_items
     }
