@@ -95,24 +95,6 @@ def scrape_yuyutei_cards(card_no: str):
                             
                 card_name = translate_to_english(jp_name) if jp_name else f"Card ({formatted_card_no})"
 
-                # Check data-src, data-original, and src for lazy-loaded real image URL
-                img_tag = box.find("img")
-                yuyutei_img_url = None
-                if img_tag:
-                    src = (
-                        img_tag.get("data-src") or 
-                        img_tag.get("data-original") or 
-                        img_tag.get("src") or ""
-                    )
-                    
-                    if "spacer" not in src and "gif" not in src:
-                        if src.startswith("//"):
-                            yuyutei_img_url = f"https:{src}"
-                        elif src.startswith("http"):
-                            yuyutei_img_url = src
-                        elif src:
-                            yuyutei_img_url = f"https://yuyu-tei.jp{src}"
-
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
                 for p in price_patterns:
@@ -124,8 +106,7 @@ def scrape_yuyutei_cards(card_no: str):
                 if card_price is not None:
                     results.append({
                         "cardName": card_name,
-                        "priceJpy": card_price,
-                        "imageUrl": yuyutei_img_url
+                        "priceJpy": card_price
                     })
                     
     except Exception as e:
@@ -138,25 +119,34 @@ def fetch_card_prices(card: str):
     formatted_card = card.strip().upper()
     jpy_to_myr, usd_to_myr = get_exchange_rates()
     
-    # Official Bandai fallback CDN URL
-    official_fallback = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
-    
     yuyutei_cards = scrape_yuyutei_cards(formatted_card)
     
     card_items = []
     if yuyutei_cards:
-        for item in yuyutei_cards:
+        # Sort so highest price / rarest versions appear first
+        yuyutei_cards.sort(key=lambda x: x["priceJpy"], reverse=True)
+        
+        total_items = len(yuyutei_cards)
+        
+        for idx, item in enumerate(yuyutei_cards):
             jpy = item["priceJpy"]
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
             
-            # Use Yuyutei image if available, otherwise fall back to Official Bandai image
-            img_src = item["imageUrl"] if item["imageUrl"] else official_fallback
+            # Construct Official Bandai CDN URLs
+            # Highest price variants get _p3 / _p2 / _p1 suffixes, lowest gets base card image
+            if total_items > 1 and idx < total_items - 1:
+                p_suffix = f"_p{total_items - 1 - idx}"
+                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}{p_suffix}.png"
+            else:
+                image_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
             
+            fallback_base_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+
             card_items.append({
                 "cardNo": formatted_card,
                 "cardName": item["cardName"],
-                "imageUrl": img_src,
-                "officialFallback": official_fallback,
+                "imageUrl": image_url,
+                "baseImageUrl": fallback_base_url,
                 "yuyutei_jpy": jpy,
                 "myr_price": myr
             })
