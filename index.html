@@ -71,10 +71,16 @@
         const response = await fetch(`${BACKEND_URL}/api/prices?card=${encodeURIComponent(cardNo)}`);
         const data = await response.json();
 
-        // Render image with referrerpolicy to prevent referer blocking
-        const imageHtml = data.imageUrl 
-          ? `<img src="${data.imageUrl}" alt="${data.cardNo}" referrerpolicy="no-referrer" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\'text-xs text-gray-400\'>No Image</span>';" class="h-24 mx-auto object-contain rounded shadow-sm" />`
-          : `<span class="text-xs text-gray-400">No Image</span>`;
+        // Attempts official Asia-EN image first. If that fails, switches to Yuyutei card image fallback.
+        const fallbackSrc = data.fallbackImageUrl || '';
+        const imageHtml = `
+          <img 
+            src="${data.officialImageUrl}" 
+            alt="${data.cardNo}" 
+            referrerpolicy="no-referrer" 
+            onerror="if('${fallbackSrc}'){ this.src='${fallbackSrc}'; this.onerror=null; } else { this.parentElement.innerHTML='<span class=\'text-xs text-gray-400\'>No Image</span>'; }" 
+            class="h-24 mx-auto object-contain rounded shadow-sm" 
+          />`;
 
         tbody.innerHTML = `
           <tr class="hover:bg-gray-50 align-middle">
