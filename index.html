@@ -86,15 +86,12 @@
 
       let rowsHtml = '';
       sortedItems.forEach((item) => {
-        // referrerpolicy="no-referrer" prevents Yuyutei from blocking the image request
         const imageHtml = `
           <img 
             src="${item.imageUrl}" 
             alt="${item.cardNo}" 
-            referrerpolicy="no-referrer" 
-            crossorigin="anonymous"
             class="h-24 mx-auto object-contain rounded shadow-sm" 
-            onerror="if(this.src!=='${item.officialFallback}'){ this.src='${item.officialFallback}'; } else { this.parentElement.innerHTML='<span class=\\'text-xs text-gray-400\\'>No Image</span>'; }" 
+            onerror="if(this.src !== '${item.baseImageUrl}'){ this.src = '${item.baseImageUrl}'; } else { this.parentElement.innerHTML='<span class=\\'text-xs text-gray-400\\'>No Image</span>'; }" 
           />`;
 
         rowsHtml += `
@@ -122,7 +119,7 @@
       tbody.innerHTML = `
         <tr>
           <td colspan="5" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
-            Fetching card images and prices from Yuyutei...
+            Fetching card data from Official Bandai CDN...
           </td>
         </tr>`;
 
