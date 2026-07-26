@@ -45,6 +45,13 @@ def auto_translate_jp_to_en(text: str) -> str:
         print(f"Translation error: {e}")
         return text
 
+def get_official_card_image_url(card_no: str, is_parallel: bool = False, p_index: int = 0) -> str:
+    """Generates the official Bandai One Piece TCG image URL."""
+    clean_no = card_no.strip().upper()
+    if is_parallel and p_index > 0:
+        return f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{clean_no}_p{p_index}.png"
+    return f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{clean_no}.png"
+
 def scrape_yuyutei_cards(search_query: str):
     results = []
     try:
@@ -68,21 +75,9 @@ def scrape_yuyutei_cards(search_query: str):
             box_text = box.text.upper()
             
             if formatted_query in box_text:
-                # Extract card number
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Extract image URL directly from Yuyutei
-                img_tag = box.find("img")
-                card_img_url = ""
-                if img_tag:
-                    card_img_url = img_tag.get("src") or img_tag.get("data-src") or ""
-                    if card_img_url.startswith("//"):
-                        card_img_url = "https:" + card_img_url
-                    elif card_img_url.startswith("/"):
-                        card_img_url = "https://yuyu-tei.jp" + card_img_url
-
-                # Extract Japanese title
                 raw_jp_name = ""
                 h4_tag = box.find(["h4", "h5"])
                 if h4_tag and h4_tag.text.strip():
@@ -95,7 +90,6 @@ def scrape_yuyutei_cards(search_query: str):
                             raw_jp_name = text
                             break
 
-                # Extract price
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
                 for p in price_patterns:
@@ -106,15 +100,13 @@ def scrape_yuyutei_cards(search_query: str):
                 
                 if card_price is not None:
                     card_name_en = auto_translate_jp_to_en(raw_jp_name) if raw_jp_name else f"Card ({extracted_card_no})"
-                    
-                    # Fallback URL format using official Bandai structure if missing
-                    fallback_img = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{extracted_card_no}.png"
+                    is_parallel = "パラレル" in raw_jp_name or "parallel" in card_name_en.lower()
                     
                     results.append({
                         "cardNo": extracted_card_no,
                         "cardName": card_name_en,
                         "priceJpy": card_price,
-                        "imageUrl": card_img_url if card_img_url else fallback_img
+                        "isParallel": is_parallel
                     })
                     
     except Exception as e:
@@ -131,19 +123,38 @@ def fetch_card_prices(card: str):
     
     card_items = []
     if yuyutei_cards:
-        yuyutei_cards.sort(key=lambda x: x["priceJpy"], reverse=True)
-        
+        # Group cards by card number to assign alternate art suffixes (_p1, _p2)
+        card_groups = {}
         for item in yuyutei_cards:
-            jpy = item["priceJpy"]
-            myr = round(jpy * jpy_to_myr, 2) if jpy else 0
+            c_no = item["cardNo"]
+            card_groups.setdefault(c_no, []).append(item)
+
+        for c_no, items in card_groups.items():
+            # Sort highest price first
+            items.sort(key=lambda x: x["priceJpy"], reverse=True)
+            total = len(items)
             
-            card_items.append({
-                "cardNo": item["cardNo"],
-                "cardName": item["cardName"],
-                "imageUrl": item["imageUrl"],
-                "yuyutei_jpy": jpy,
-                "myr_price": myr
-            })
+            for idx, item in enumerate(items):
+                jpy = item["priceJpy"]
+                myr = round(jpy * jpy_to_myr, 2) if jpy else 0
+                
+                # Assign official image URLs (_p1, _p2 for alternate arts, base url for standard art)
+                if total > 1 and idx < total - 1:
+                    p_num = total - 1 - idx
+                    img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}_p{p_num}.png"
+                else:
+                    img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}.png"
+
+                base_img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}.png"
+
+                card_items.append({
+                    "cardNo": c_no,
+                    "cardName": item["cardName"],
+                    "imageUrl": img_url,
+                    "baseImageUrl": base_img_url,
+                    "yuyutei_jpy": jpy,
+                    "myr_price": myr
+                })
 
     return {
         "searchQuery": formatted_query,
