@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import html
+import urllib.parse
 
 app = FastAPI()
 
@@ -27,8 +28,33 @@ def get_exchange_rates():
     except Exception:
         return 0.025, 4.40
 
+def translate_jp_to_en(text: str) -> str:
+    """Translates Japanese card/character names from Yuyutei to English."""
+    if not text:
+        return ""
+    try:
+        # Clean common brackets/suffixes before translating
+        clean_input = re.sub(r'\(.*?\)|（.*?）|【.*?】', '', text).strip()
+        if not clean_input:
+            clean_input = text
+
+        encoded_text = urllib.parse.quote(clean_input)
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=en&dt=t&q={encoded_text}"
+        
+        res = requests.get(url, timeout=5).json()
+        translated = "".join([segment[0] for segment in res[0] if segment[0]])
+        
+        # Format common names cleanly
+        translated = re.sub(r'\s+', ' ', translated).strip()
+        translated = translated.replace("Monkey. D. Luffy", "Monkey D. Luffy")
+        translated = translated.replace("Roronoa. Zoro", "Roronoa Zoro")
+        return translated
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return text
+
 def load_official_sets():
-    """Builds an accurate set lookup table directly from Bandai's select option dropdown."""
+    """Builds set lookup table directly from Bandai's select options."""
     global OFFICIAL_SET_MAP
     if OFFICIAL_SET_MAP:
         return OFFICIAL_SET_MAP
@@ -48,10 +74,9 @@ def load_official_sets():
                 clean_set_name = re.sub(r'\s+', ' ', clean_set_name).strip()
                 
                 if clean_set_name and "ALL" not in clean_set_name.upper():
-                    # Extract set codes like ST-01, OP-01, etc.
                     codes = re.findall(r'\[(.*?)\]', clean_set_name)
                     for code in codes:
-                        norm_code = code.replace("-", "").upper() # e.g. ST01
+                        norm_code = code.replace("-", "").upper()
                         OFFICIAL_SET_MAP[norm_code] = clean_set_name
                         OFFICIAL_SET_MAP[code.upper()] = clean_set_name
 
@@ -60,55 +85,12 @@ def load_official_sets():
         
     return OFFICIAL_SET_MAP
 
-def fetch_official_card_info(card_no: str):
-    """Fetches exact official English card name and matches Card Set by card code prefix."""
-    clean_no = card_no.strip().upper()
-    
-    if clean_no in CARD_DETAIL_CACHE:
-        return CARD_DETAIL_CACHE[clean_no]
-
+def get_official_set_name(card_no: str) -> str:
+    """Matches official set name by card number prefix (e.g. ST01 -> STARTER DECK -Straw Hat Crew- [ST-01])."""
     official_sets = load_official_sets()
-    
-    # Extract set prefix from cardNo (e.g. "ST01" from "ST01-012")
-    prefix_match = re.match(r'^([A-Z]{2,3}\d{2})', clean_no)
+    prefix_match = re.match(r'^([A-Z]{2,3}\d{2})', card_no.strip().upper())
     set_prefix = prefix_match.group(1) if prefix_match else ""
-    
-    matched_set = official_sets.get(set_prefix, "")
-
-    official_card_name = ""
-    try:
-        url = f"https://asia-en.onepiece-cardgame.com/cardlist/?seek={clean_no}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        res = requests.get(url, headers=headers, timeout=5)
-        
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, "html.parser")
-            
-            # Find the card modal/box on Bandai
-            for item in soup.select(".cardDetail, .modalCol, .cardListItem"):
-                if clean_no in item.text.upper():
-                    name_elem = item.select_one(".cardName, .card-name, dt")
-                    if name_elem:
-                        official_card_name = name_elem.text.strip()
-                        official_card_name = re.sub(r'\s+', ' ', official_card_name)
-
-                    set_elem = item.select_one(".series, .cardSet, .setName")
-                    if set_elem and not matched_set:
-                        matched_set = set_elem.text.strip()
-                    break
-
-    except Exception as e:
-        print(f"Error fetching card info for {clean_no}: {e}")
-
-    final_set = matched_set if matched_set else "ONE PIECE CARD GAME"
-    
-    if official_card_name:
-        CARD_DETAIL_CACHE[clean_no] = (official_card_name, final_set)
-    else:
-        # Avoid showing "Card (ST01-012)" when name fetch is pending/failed
-        CARD_DETAIL_CACHE[clean_no] = ("", final_set)
-
-    return CARD_DETAIL_CACHE[clean_no]
+    return official_sets.get(set_prefix, "ONE PIECE CARD GAME")
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
@@ -158,6 +140,7 @@ def scrape_yuyutei_cards(search_query: str):
 
                     results.append({
                         "cardNo": extracted_card_no,
+                        "rawJpName": raw_jp_name,
                         "variantTag": variant_tag,
                         "priceJpy": card_price
                     })
@@ -182,7 +165,7 @@ def fetch_card_prices(card: str):
             card_groups.setdefault(c_no, []).append(item)
 
         for c_no, items in card_groups.items():
-            official_name, official_set = fetch_official_card_info(c_no)
+            official_set = get_official_set_name(c_no)
 
             items.sort(key=lambda x: x["priceJpy"], reverse=True)
             total = len(items)
@@ -191,11 +174,15 @@ def fetch_card_prices(card: str):
                 jpy = item["priceJpy"]
                 myr = round(jpy * jpy_to_myr, 2) if jpy else 0
                 
-                # Format name nicely without generic fallback labels
-                if official_name:
-                    display_name = f"{official_name}{item['variantTag']}"
+                # Clean and translate Japanese card title from Yuyutei to Character Name
+                if c_no not in CARD_DETAIL_CACHE:
+                    translated_char_name = translate_jp_to_en(item["rawJpName"])
+                    CARD_DETAIL_CACHE[c_no] = translated_char_name
                 else:
-                    display_name = f"{c_no}{item['variantTag']}"
+                    translated_char_name = CARD_DETAIL_CACHE[c_no]
+
+                char_name = translated_char_name if translated_char_name else c_no
+                display_name = f"{char_name}{item['variantTag']}"
 
                 if total > 1 and idx < total - 1:
                     p_num = total - 1 - idx
