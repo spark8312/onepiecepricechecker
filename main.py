@@ -14,6 +14,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Set map fallback in case Yuyutei search page doesn't list set breadcrumbs
+SET_MAP = {
+    "ST01": "[ST01] STARTER DECK -Straw Hat Crew-",
+    "ST02": "[ST02] STARTER DECK -Worst Generation-",
+    "ST03": "[ST03] STARTER DECK -Seven Warlords of the Sea-",
+    "ST04": "[ST04] STARTER DECK -Animal Kingdom Pirates-",
+    "ST05": "[ST05] STARTER DECK -ONE PIECE FILM Edition-",
+    "ST06": "[ST06] STARTER DECK -Navy-",
+    "ST07": "[ST07] STARTER DECK -Big Mom Pirates-",
+    "ST08": "[ST08] STARTER DECK -Monkey D. Luffy-",
+    "ST09": "[ST09] STARTER DECK -Yamato-",
+    "ST10": "[ST10] STARTER DECK -Ultimate Deck- Three Captains",
+    "ST11": "[ST11] STARTER DECK -Uta-",
+    "ST12": "[ST12] STARTER DECK -Zoro & Sanji-",
+    "ST13": "[ST13] 3D2Y",
+    "ST14": "[ST14] 3D2Y",
+    "OP01": "[OP01] BOOSTER PACK -ROMANCE DAWN-",
+    "OP02": "[OP02] BOOSTER PACK -PARAMOUNT WAR-",
+    "OP03": "[OP03] BOOSTER PACK -PILLARS OF STRENGTH-",
+    "OP04": "[OP04] BOOSTER PACK -KINGDOMS OF INTRIGUE-",
+    "OP05": "[OP05] Protagonist of the New Era",
+    "OP06": "[OP06] BOOSTER PACK -FLANKED BY LEGENDS-",
+    "OP07": "[OP07] BOOSTER PACK -500 YEARS INTO THE FUTURE-",
+    "OP08": "[OP08] BOOSTER PACK -TWO LEGENDS-",
+    "OP09": "[OP09] BOOSTER PACK -THE FOUR EMPERORS-",
+    "EB01": "[EB01] EXTRA BOOSTER -MEMORIAL COLLECTION-",
+}
+
 def get_exchange_rates():
     try:
         res = requests.get("https://open.er-api.com/v6/latest/USD", timeout=5).json()
@@ -59,8 +87,8 @@ def scrape_yuyutei_cards(search_query: str):
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Extract Card Set directly from Yuyutei title / breadcrumb context
-        yyt_card_set = "ONE PIECE Card Game"
+        # 1. Try extracting Card Set from Yuyutei breadcrumbs or title
+        yyt_card_set = ""
         page_title = soup.title.text if soup.title else ""
         
         set_match = re.search(r'\[(.*?)\]\s*([^|]+)', page_title)
@@ -80,6 +108,10 @@ def scrape_yuyutei_cards(search_query: str):
             if formatted_query in box_text:
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
+
+                # Determine set name from card prefix if title scraping didn't match
+                prefix = extracted_card_no.split("-")[0] if "-" in extracted_card_no else extracted_card_no[:4]
+                final_card_set = yyt_card_set if yyt_card_set else SET_MAP.get(prefix, f"[{prefix}] ONE PIECE Card Game")
 
                 raw_jp_name = ""
                 h4_tag = box.find(["h4", "h5"])
@@ -108,7 +140,7 @@ def scrape_yuyutei_cards(search_query: str):
                     results.append({
                         "cardNo": extracted_card_no,
                         "cardName": card_name_en,
-                        "cardSet": yyt_card_set,
+                        "cardSet": final_card_set,
                         "priceJpy": card_price,
                         "isParallel": is_parallel
                     })
