@@ -8,7 +8,7 @@
 </head>
 <body class="bg-gray-100 min-h-screen p-8">
 
-  <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+  <div class="max-w-5xl mx-auto bg-white rounded-lg shadow-md p-6">
     <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">
       🏴‍☠️ One Piece TCG Price Finder
     </h1>
@@ -17,7 +17,7 @@
       <input 
         type="text" 
         id="card-number" 
-        placeholder="Enter Card No (e.g. ST09-001, OP01-016, P-074)..." 
+        placeholder="Enter Card No (e.g. ST09-001, OP01-016, OP13-118)..." 
         class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
         required
       />
@@ -35,13 +35,14 @@
           <tr class="bg-gray-800 text-white">
             <th class="p-3 border text-center w-28">Card Image</th>
             <th class="p-3 border">Card No</th>
+            <th class="p-3 border">Card Name</th>
             <th class="p-3 border">Yuyutei (JPY)</th>
             <th class="p-3 border bg-emerald-700">Converted Price (MYR)</th>
           </tr>
         </thead>
         <tbody id="results-body">
           <tr>
-            <td colspan="4" class="p-4 text-center text-gray-500">
+            <td colspan="5" class="p-4 text-center text-gray-500">
               Enter a card number above to search.
             </td>
           </tr>
@@ -62,8 +63,8 @@
       
       tbody.innerHTML = `
         <tr>
-          <td colspan="4" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
-            Fetching image and prices...
+          <td colspan="5" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
+            Fetching card data and prices from Yuyutei...
           </td>
         </tr>`;
 
@@ -71,31 +72,47 @@
         const response = await fetch(`${BACKEND_URL}/api/prices?card=${encodeURIComponent(cardNo)}`);
         const data = await response.json();
 
-        // Attempts official Asia-EN image first. If that fails, switches to Yuyutei card image fallback.
-        const fallbackSrc = data.fallbackImageUrl || '';
-        const imageHtml = `
-          <img 
-            src="${data.officialImageUrl}" 
-            alt="${data.cardNo}" 
-            referrerpolicy="no-referrer" 
-            onerror="if('${fallbackSrc}'){ this.src='${fallbackSrc}'; this.onerror=null; } else { this.parentElement.innerHTML='<span class=\'text-xs text-gray-400\'>No Image</span>'; }" 
-            class="h-24 mx-auto object-contain rounded shadow-sm" 
-          />`;
+        if (!data.items || data.items.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="5" class="p-4 text-center text-gray-500">
+                No cards found for "${cardNo}".
+              </td>
+            </tr>`;
+          return;
+        }
 
-        tbody.innerHTML = `
-          <tr class="hover:bg-gray-50 align-middle">
-            <td class="p-2 border text-center">${imageHtml}</td>
-            <td class="p-3 border font-semibold">${data.cardNo}</td>
-            <td class="p-3 border">${data.yuyutei_jpy ? `¥${data.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
-            <td class="p-3 border font-bold text-emerald-600 bg-emerald-50">
-              ${data.myr_price !== 'N/A' ? `RM ${data.myr_price}` : 'N/A'}
-            </td>
-          </tr>
-        `;
+        let rowsHtml = '';
+        data.items.forEach((item) => {
+          const fallbackSrc = item.fallbackImageUrl || '';
+          const imageHtml = `
+            <img 
+              src="${item.officialImageUrl}" 
+              alt="${item.cardNo}" 
+              referrerpolicy="no-referrer" 
+              onerror="if('${fallbackSrc}'){ this.src='${fallbackSrc}'; this.onerror=null; } else { this.parentElement.innerHTML='<span class=\'text-xs text-gray-400\'>No Image</span>'; }" 
+              class="h-24 mx-auto object-contain rounded shadow-sm" 
+            />`;
+
+          rowsHtml += `
+            <tr class="hover:bg-gray-50 align-middle">
+              <td class="p-2 border text-center">${imageHtml}</td>
+              <td class="p-3 border font-semibold">${item.cardNo}</td>
+              <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
+              <td class="p-3 border">${item.yuyutei_jpy ? `¥${item.yuyutei_jpy.toLocaleString()}` : 'N/A'}</td>
+              <td class="p-3 border font-bold text-emerald-600 bg-emerald-50">
+                ${item.myr_price !== 'N/A' ? `RM ${item.myr_price}` : 'N/A'}
+              </td>
+            </tr>
+          `;
+        });
+
+        tbody.innerHTML = rowsHtml;
+
       } catch (err) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="4" class="p-4 text-center text-red-500">
+            <td colspan="5" class="p-4 text-center text-red-500">
               Error connecting to the price server.
             </td>
           </tr>`;
