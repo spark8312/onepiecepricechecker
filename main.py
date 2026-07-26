@@ -24,10 +24,6 @@ def get_exchange_rates():
         return 0.025, 4.40
 
 def translate_to_english(text: str) -> str:
-    """
-    Translates common Japanese One Piece terms/rarities into English 
-    and cleans up any remaining Japanese characters.
-    """
     translations = [
         ("レッドスーパーパラレル", " (Red Super Parallel)"),
         ("スーパーパラレル", " (Super Parallel / Manga Rare)"),
@@ -57,15 +53,9 @@ def translate_to_english(text: str) -> str:
     for jp, en in translations:
         clean_text = clean_text.replace(jp, en)
         
-    # Strip out any remaining Japanese characters (Kanji, Hiragana, Katakana)
     clean_text = re.sub(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]', '', clean_text)
-    
-    # Clean up empty brackets like () or [] left behind
     clean_text = re.sub(r'[\(\[\{]\s*[\)\]\}]', '', clean_text)
-    
-    # Fix double spaces
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    
     return clean_text
 
 def scrape_yuyutei_cards(card_no: str):
@@ -82,7 +72,6 @@ def scrape_yuyutei_cards(card_no: str):
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Exclude unwanted recommended/pickup sidebar items
         for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
             extra.decompose()
             
@@ -92,7 +81,6 @@ def scrape_yuyutei_cards(card_no: str):
             box_text = box.text.upper()
             
             if formatted_card_no in box_text:
-                # 1. Extract Name
                 jp_name = None
                 h4_tag = box.find(["h4", "h5"])
                 if h4_tag and h4_tag.text.strip():
@@ -107,24 +95,24 @@ def scrape_yuyutei_cards(card_no: str):
                             
                 card_name = translate_to_english(jp_name) if jp_name else f"Card ({formatted_card_no})"
 
-                # 2. Extract Yuyutei Image URL (checks data-src, src, and srcset)
+                # Check data-src, data-original, and src for lazy-loaded real image URL
                 img_tag = box.find("img")
                 yuyutei_img_url = None
                 if img_tag:
                     src = (
                         img_tag.get("data-src") or 
-                        img_tag.get("src") or 
-                        img_tag.get("data-original") or ""
+                        img_tag.get("data-original") or 
+                        img_tag.get("src") or ""
                     )
                     
-                    if src.startswith("//"):
-                        yuyutei_img_url = f"https:{src}"
-                    elif src.startswith("http"):
-                        yuyutei_img_url = src
-                    elif src:
-                        yuyutei_img_url = f"https://yuyu-tei.jp{src}"
+                    if "spacer" not in src and "gif" not in src:
+                        if src.startswith("//"):
+                            yuyutei_img_url = f"https:{src}"
+                        elif src.startswith("http"):
+                            yuyutei_img_url = src
+                        elif src:
+                            yuyutei_img_url = f"https://yuyu-tei.jp{src}"
 
-                # 3. Extract Price
                 price_patterns = box.find_all(text=re.compile(r'[\d,]+\s*(yen|円)'))
                 card_price = None
                 for p in price_patterns:
@@ -150,6 +138,9 @@ def fetch_card_prices(card: str):
     formatted_card = card.strip().upper()
     jpy_to_myr, usd_to_myr = get_exchange_rates()
     
+    # Official Bandai fallback CDN URL
+    official_fallback = f"https://en.onepiece-cardgame.com/images/cardlist/card/{formatted_card}.png"
+    
     yuyutei_cards = scrape_yuyutei_cards(formatted_card)
     
     card_items = []
@@ -157,10 +148,15 @@ def fetch_card_prices(card: str):
         for item in yuyutei_cards:
             jpy = item["priceJpy"]
             myr = round(jpy * jpy_to_myr, 2) if jpy else 0
+            
+            # Use Yuyutei image if available, otherwise fall back to Official Bandai image
+            img_src = item["imageUrl"] if item["imageUrl"] else official_fallback
+            
             card_items.append({
                 "cardNo": formatted_card,
                 "cardName": item["cardName"],
-                "imageUrl": item["imageUrl"],
+                "imageUrl": img_src,
+                "officialFallback": official_fallback,
                 "yuyutei_jpy": jpy,
                 "myr_price": myr
             })
