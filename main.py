@@ -4,7 +4,6 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import html
-import urllib.parse
 
 app = FastAPI()
 
@@ -15,7 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global caches to improve speed and avoid rate limits
 OFFICIAL_SET_MAP = {}
 CARD_DETAIL_CACHE = {}
 
@@ -30,7 +28,7 @@ def get_exchange_rates():
         return 0.025, 4.40
 
 def load_official_sets():
-    """Builds a lookup table from official Bandai <option> tags."""
+    """Builds an accurate set lookup table directly from Bandai's select option dropdown."""
     global OFFICIAL_SET_MAP
     if OFFICIAL_SET_MAP:
         return OFFICIAL_SET_MAP
@@ -50,50 +48,34 @@ def load_official_sets():
                 clean_set_name = re.sub(r'\s+', ' ', clean_set_name).strip()
                 
                 if clean_set_name and "ALL" not in clean_set_name.upper():
-                    # Extract set codes like OP-01, ST-01, OP01, ST01, etc.
+                    # Extract set codes like ST-01, OP-01, etc.
                     codes = re.findall(r'\[(.*?)\]', clean_set_name)
                     for code in codes:
-                        norm_code = code.replace("-", "").upper()
+                        norm_code = code.replace("-", "").upper() # e.g. ST01
                         OFFICIAL_SET_MAP[norm_code] = clean_set_name
                         OFFICIAL_SET_MAP[code.upper()] = clean_set_name
-
-                    # Also index keywords like ROMANCE DAWN
-                    words = re.findall(r'[A-Z0-9\-]{3,}', clean_set_name.upper())
-                    for w in words:
-                        if w not in ["PACK", "DECK", "BOOSTER", "STARTER", "EXTRA"]:
-                            OFFICIAL_SET_MAP[w] = clean_set_name
 
     except Exception as e:
         print(f"Error loading official set list: {e}")
         
     return OFFICIAL_SET_MAP
 
-def fetch_official_card_info(card_no: str, yyt_set_tag: str = ""):
-    """Gets official Card Name and matches Official Card Set."""
+def fetch_official_card_info(card_no: str):
+    """Fetches exact official English card name and matches Card Set by card code prefix."""
     clean_no = card_no.strip().upper()
     
     if clean_no in CARD_DETAIL_CACHE:
         return CARD_DETAIL_CACHE[clean_no]
 
     official_sets = load_official_sets()
-    matched_set = ""
+    
+    # Extract set prefix from cardNo (e.g. "ST01" from "ST01-012")
+    prefix_match = re.match(r'^([A-Z]{2,3}\d{2})', clean_no)
+    set_prefix = prefix_match.group(1) if prefix_match else ""
+    
+    matched_set = official_sets.get(set_prefix, "")
 
-    # Match YYT set tag (e.g. "[OP01]ROMANCE DAWN") against official sets
-    if yyt_set_tag:
-        # Check set code in brackets first (e.g. OP01)
-        code_match = re.search(r'\[(.*?)\]', yyt_set_tag)
-        if code_match:
-            raw_code = code_match.group(1).replace("-", "").upper()
-            if raw_code in official_sets:
-                matched_set = official_sets[raw_code]
-
-        # Check full text keywords if code match wasn't found
-        if not matched_set:
-            for kw, bandai_name in official_sets.items():
-                if kw in yyt_set_tag.upper():
-                    matched_set = bandai_name
-                    break
-
+    official_card_name = ""
     try:
         url = f"https://asia-en.onepiece-cardgame.com/cardlist/?seek={clean_no}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -102,26 +84,31 @@ def fetch_official_card_info(card_no: str, yyt_set_tag: str = ""):
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             
-            for item in soup.select(".cardListItem, dl.modalCol, div.cardDetail"):
+            # Find the card modal/box on Bandai
+            for item in soup.select(".cardDetail, .modalCol, .cardListItem"):
                 if clean_no in item.text.upper():
-                    name_elem = item.select_one(".cardName, .card-name, .name, dt")
-                    official_card_name = name_elem.text.strip() if name_elem else ""
+                    name_elem = item.select_one(".cardName, .card-name, dt")
+                    if name_elem:
+                        official_card_name = name_elem.text.strip()
+                        official_card_name = re.sub(r'\s+', ' ', official_card_name)
 
-                    set_elem = item.select_one(".series, .cardSet, .setName, .set")
+                    set_elem = item.select_one(".series, .cardSet, .setName")
                     if set_elem and not matched_set:
                         matched_set = set_elem.text.strip()
-
-                    official_card_name = re.sub(r'\s+', ' ', official_card_name)
-                    matched_set = re.sub(r'\s+', ' ', matched_set)
-
-                    if official_card_name:
-                        CARD_DETAIL_CACHE[clean_no] = (official_card_name, matched_set or yyt_set_tag)
-                        return CARD_DETAIL_CACHE[clean_no]
+                    break
 
     except Exception as e:
         print(f"Error fetching card info for {clean_no}: {e}")
 
-    return None, matched_set or yyt_set_tag or "ONE PIECE CARD GAME"
+    final_set = matched_set if matched_set else "ONE PIECE CARD GAME"
+    
+    if official_card_name:
+        CARD_DETAIL_CACHE[clean_no] = (official_card_name, final_set)
+    else:
+        # Avoid showing "Card (ST01-012)" when name fetch is pending/failed
+        CARD_DETAIL_CACHE[clean_no] = ("", final_set)
+
+    return CARD_DETAIL_CACHE[clean_no]
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
@@ -136,16 +123,6 @@ def scrape_yuyutei_cards(search_query: str):
         
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        
-        # Extract Set Title tag from YYT header or <title>
-        yyt_set_tag = ""
-        if soup.title:
-            # Extract pattern like "[OP01]ROMANCE DAWN" from page title
-            match = re.search(r'\[(.*?)\][^\s|]*', soup.title.text)
-            if match:
-                yyt_set_tag = match.group(0)
-            else:
-                yyt_set_tag = soup.title.text
         
         for extra in soup.select("#PICKUP, .pickup-box, div[id*='pickup'], .latest-box"):
             extra.decompose()
@@ -182,8 +159,7 @@ def scrape_yuyutei_cards(search_query: str):
                     results.append({
                         "cardNo": extracted_card_no,
                         "variantTag": variant_tag,
-                        "priceJpy": card_price,
-                        "yytSetTag": yyt_set_tag
+                        "priceJpy": card_price
                     })
                     
     except Exception as e:
@@ -206,8 +182,7 @@ def fetch_card_prices(card: str):
             card_groups.setdefault(c_no, []).append(item)
 
         for c_no, items in card_groups.items():
-            yyt_tag = items[0].get("yytSetTag", "")
-            official_name, official_set = fetch_official_card_info(c_no, yyt_tag)
+            official_name, official_set = fetch_official_card_info(c_no)
 
             items.sort(key=lambda x: x["priceJpy"], reverse=True)
             total = len(items)
@@ -216,7 +191,11 @@ def fetch_card_prices(card: str):
                 jpy = item["priceJpy"]
                 myr = round(jpy * jpy_to_myr, 2) if jpy else 0
                 
-                display_name = f"{official_name}{item['variantTag']}" if official_name else f"Card ({c_no}){item['variantTag']}"
+                # Format name nicely without generic fallback labels
+                if official_name:
+                    display_name = f"{official_name}{item['variantTag']}"
+                else:
+                    display_name = f"{c_no}{item['variantTag']}"
 
                 if total > 1 and idx < total - 1:
                     p_num = total - 1 - idx
