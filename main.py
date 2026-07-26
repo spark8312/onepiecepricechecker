@@ -31,14 +31,13 @@ def scrape_yuyutei_cards(search_query: str):
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Accept-Language": "en-US,en;q=0.9,ja;q=0.8"
+            "Accept-Language": "en-US,en;q=0.9"
         }
         
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # 1. Extract Card Set directly from Yuyutei page <title> or breadcrumbs
-        # Example: "P-SR Monkey D. Luffy (Parallel) (Signed) for Sale | [OP05] Protagonist of the New Era | ..."
+        # Extract Card Set directly from Yuyutei breadcrumbs/title
         yyt_card_set = "ONE PIECE Card Game"
         page_title = soup.title.text if soup.title else ""
         
@@ -60,13 +59,13 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Extract Card Name directly from Yuyutei box header
+                # Extract Card Name
                 raw_card_name = ""
                 h4_tag = box.find(["h4", "h5", "a"])
                 if h4_tag and h4_tag.text.strip():
                     raw_card_name = h4_tag.text.strip()
 
-                # Strip internal rarity prefixes like "P-SR ", "P-L ", "SR ", etc.
+                # Clean rarity prefix (e.g., P-SR, P-L)
                 cleaned_card_name = re.sub(r'^(P-[A-Z]{1,3}|[A-Z]{1,3})\s+', '', raw_card_name).strip()
                 if not cleaned_card_name:
                     cleaned_card_name = raw_card_name or extracted_card_no
@@ -102,7 +101,6 @@ def fetch_card_prices(card: str):
     
     card_items = []
     if yuyutei_cards:
-        # Group by cardNo
         card_groups = {}
         for item in yuyutei_cards:
             c_no = item["cardNo"]
@@ -116,7 +114,6 @@ def fetch_card_prices(card: str):
                 jpy = item["priceJpy"]
                 myr = round(jpy * jpy_to_myr, 2) if jpy else 0
 
-                # Determine alternate artwork image URLs
                 if total > 1 and idx < total - 1:
                     p_num = total - 1 - idx
                     img_url = f"https://asia-en.onepiece-cardgame.com/images/cardlist/card/{c_no}_p{p_num}.png"
