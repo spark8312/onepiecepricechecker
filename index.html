@@ -106,6 +106,7 @@
             <th class="p-3 border text-center w-28">Card Image</th>
             <th class="p-3 border">Card No</th>
             <th class="p-3 border">Card Name</th>
+            <th class="p-3 border">Rarity</th>
             <th class="p-3 border">Card Set</th>
             <th class="p-3 border">Yuyutei (JPY)</th>
             <th class="p-3 border bg-emerald-700 whitespace-nowrap" id="table-header-converted">Converted Price</th>
@@ -114,7 +115,7 @@
         </thead>
         <tbody id="results-body">
           <tr>
-            <td colspan="7" class="p-4 text-center text-gray-500">
+            <td colspan="8" class="p-4 text-center text-gray-500">
               Enter a card number or set code above to search.
             </td>
           </tr>
@@ -190,6 +191,7 @@
       sortedItems.forEach((item) => {
         const jpyPrice = item.yuyutei_jpy || 0;
         const convertedPrice = jpyPrice ? (jpyPrice * customRate).toFixed(2) : 'N/A';
+        const rarity = item.rarity || 'N/A';
 
         const imageHtml = `
           <img 
@@ -206,6 +208,9 @@
             <td class="p-2 border text-center">${imageHtml}</td>
             <td class="p-3 border font-semibold whitespace-nowrap">${item.cardNo}</td>
             <td class="p-3 border font-medium text-gray-800">${item.cardName}</td>
+            <td class="p-3 border font-bold text-center">
+              <span class="inline-block bg-purple-100 text-purple-800 text-xs px-2.5 py-1 rounded-full border border-purple-200">${rarity}</span>
+            </td>
             <td class="p-3 border text-sm text-gray-600">${item.cardSet || 'N/A'}</td>
             <td class="p-3 border font-semibold">${jpyPrice ? `¥${jpyPrice.toLocaleString()}` : 'N/A'}</td>
             <td class="p-3 border font-bold text-emerald-600 bg-emerald-50 whitespace-nowrap">
@@ -233,7 +238,7 @@
       
       tbody.innerHTML = `
         <tr>
-          <td colspan="7" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
+          <td colspan="8" class="p-4 text-center text-blue-600 font-semibold animate-pulse">
             Fetching card data from Yuyutei...
           </td>
         </tr>`;
@@ -245,7 +250,7 @@
         if (!data.items || data.items.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="7" class="p-4 text-center text-gray-500">
+              <td colspan="8" class="p-4 text-center text-gray-500">
                 No cards found for "${query}".
               </td>
             </tr>`;
@@ -258,7 +263,7 @@
       } catch (err) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="7" class="p-4 text-center text-red-500">
+            <td colspan="8" class="p-4 text-center text-red-500">
               Error connecting to the price server.
             </td>
           </tr>`;
