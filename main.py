@@ -48,7 +48,6 @@ def auto_translate_jp_to_en(text: str) -> str:
         return text
 
 def scrape_card_detail_page(detail_url: str):
-    """Fetches Card Set and Card Name directly from Yuyutei individual card page."""
     if detail_url in DETAIL_CACHE:
         return DETAIL_CACHE[detail_url]
 
@@ -85,6 +84,19 @@ def scrape_card_detail_page(detail_url: str):
     DETAIL_CACHE[detail_url] = result
     return result
 
+def extract_rarity_from_text(text: str) -> str:
+    """Detects card rarity codes from Yuyutei element text (e.g., P-SR, P-SEC, SP, SR, L, R, C, UC, etc.)"""
+    rarity_patterns = [
+        r'\b(P-[A-Z]{1,3})\b',         # P-SR, P-SEC, P-L, P-R
+        r'\b(SP-[A-Z]+)\b',            # SP-CARD
+        r'\b(SP|SEC|SR|L|R|UC|C|TR)\b'  # Standard rarities
+    ]
+    for pattern in rarity_patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+    return "N/A"
+
 def scrape_yuyutei_cards(search_query: str):
     results = []
     try:
@@ -111,7 +123,10 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Robust Yuyutei image extraction (handles src, data-src, data-original)
+                # Extract Rarity
+                rarity = extract_rarity_from_text(box_text)
+
+                # Robust Yuyutei image extraction
                 yyt_img_url = ""
                 img_tag = box.find("img")
                 if img_tag:
@@ -128,7 +143,7 @@ def scrape_yuyutei_cards(search_query: str):
                         else:
                             yyt_img_url = f"https://card.yuyu-tei.jp{raw_src}" if "/opc/" in raw_src else f"https://yuyu-tei.jp{raw_src}"
 
-                # Find link to individual card detail page
+                # Extract detail URL
                 detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
                 card_set_en = "ONE PIECE Card Game"
                 card_name_en = ""
@@ -173,6 +188,7 @@ def scrape_yuyutei_cards(search_query: str):
                         "cardNo": extracted_card_no,
                         "cardName": final_card_name,
                         "cardSet": card_set_en,
+                        "rarity": rarity,
                         "priceJpy": card_price,
                         "imageUrl": yyt_img_url
                     })
@@ -202,6 +218,7 @@ def fetch_card_prices(card: str):
                 "cardNo": c_no,
                 "cardName": item["cardName"],
                 "cardSet": item["cardSet"],
+                "rarity": item.get("rarity", "N/A"),
                 "imageUrl": item["imageUrl"] if item["imageUrl"] else fallback_img,
                 "baseImageUrl": fallback_img,
                 "yuyutei_jpy": jpy,
