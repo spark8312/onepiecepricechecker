@@ -47,6 +47,25 @@ def auto_translate_jp_to_en(text: str) -> str:
         print(f"Translation error: {e}")
         return text
 
+def extract_rarity_from_text(text: str) -> str:
+    """Accurately extracts card rarity codes (P-SR, SR, P-SEC, SEC, SP, P-L, L, R, C, UC, etc.)"""
+    if not text:
+        return ""
+    
+    # Check compound/parallel rarities first, then standard rarities
+    rarities = [
+        "P-SEC", "P-SR", "P-L", "P-R", "P-UC", "P-C", "P-TR", "P-SP", "P-P",
+        "SEC", "SR", "SP", "L", "R", "UC", "C", "TR"
+    ]
+    
+    for r in rarities:
+        # Match rarity as an independent token surrounded by spaces/punctuation/Japanese characters
+        pattern = r'(?<![A-Za-z0-9-])' + re.escape(r) + r'(?![A-Za-z0-9-])'
+        if re.search(pattern, text, re.IGNORECASE):
+            return r
+            
+    return ""
+
 def scrape_card_detail_page(detail_url: str):
     if detail_url in DETAIL_CACHE:
         return DETAIL_CACHE[detail_url]
@@ -58,6 +77,7 @@ def scrape_card_detail_page(detail_url: str):
 
     card_set_en = "ONE PIECE Card Game"
     card_name_en = ""
+    rarity = ""
 
     try:
         res = requests.get(detail_url, headers=headers, timeout=5)
@@ -65,6 +85,8 @@ def scrape_card_detail_page(detail_url: str):
             soup = BeautifulSoup(res.text, "html.parser")
             
             page_title = soup.title.text if soup.title else ""
+            
+            # Extract Set Name
             set_match = re.search(r'\[(.*?)\]\s*([^|]+)', page_title)
             if set_match:
                 set_code = set_match.group(1).strip()
@@ -72,30 +94,25 @@ def scrape_card_detail_page(detail_url: str):
                 translated_set = auto_translate_jp_to_en(raw_set_jp)
                 card_set_en = f"[{set_code}] {translated_set}"
 
+            # Extract Card Name
             heading = soup.find(["h1", "h2", "h3"], class_=re.compile(r'title|card-title|name', re.I))
             if heading and heading.text.strip():
                 raw_jp_name = heading.text.strip()
                 card_name_en = auto_translate_jp_to_en(raw_jp_name)
 
+            # Extract Rarity from Title (e.g. "P-SR リリス(パラレル) 販売 | [OP07]...")
+            title_prefix = page_title.split('|')[0].replace('販売', '').strip()
+            rarity = extract_rarity_from_text(title_prefix)
+            
+            if not rarity:
+                rarity = extract_rarity_from_text(page_title)
+
     except Exception as e:
         print(f"Error scraping detail page {detail_url}: {e}")
 
-    result = {"cardSet": card_set_en, "cardName": card_name_en}
+    result = {"cardSet": card_set_en, "cardName": card_name_en, "rarity": rarity}
     DETAIL_CACHE[detail_url] = result
     return result
-
-def extract_rarity_from_text(text: str) -> str:
-    """Detects card rarity codes from Yuyutei element text (e.g., P-SR, P-SEC, SP, SR, L, R, C, UC, etc.)"""
-    rarity_patterns = [
-        r'\b(P-[A-Z]{1,3})\b',         # P-SR, P-SEC, P-L, P-R
-        r'\b(SP-[A-Z]+)\b',            # SP-CARD
-        r'\b(SP|SEC|SR|L|R|UC|C|TR)\b'  # Standard rarities
-    ]
-    for pattern in rarity_patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1)
-    return "N/A"
 
 def scrape_yuyutei_cards(search_query: str):
     results = []
@@ -123,9 +140,6 @@ def scrape_yuyutei_cards(search_query: str):
                 card_no_match = re.search(r'[A-Z]{2,3}\d{2}-\d{3}', box_text)
                 extracted_card_no = card_no_match.group(0) if card_no_match else formatted_query
 
-                # Extract Rarity
-                rarity = extract_rarity_from_text(box_text)
-
                 # Robust Yuyutei image extraction
                 yyt_img_url = ""
                 img_tag = box.find("img")
@@ -143,11 +157,12 @@ def scrape_yuyutei_cards(search_query: str):
                         else:
                             yyt_img_url = f"https://card.yuyu-tei.jp{raw_src}" if "/opc/" in raw_src else f"https://yuyu-tei.jp{raw_src}"
 
-                # Extract detail URL
+                # Extract detail URL and card attributes
                 detail_link_tag = box.find("a", href=re.compile(r'/sell/opc/card/'))
                 card_set_en = "ONE PIECE Card Game"
                 card_name_en = ""
                 raw_jp_name = ""
+                rarity = extract_rarity_from_text(box_text)
 
                 if detail_link_tag and detail_link_tag.get("href"):
                     detail_href = detail_link_tag["href"]
@@ -158,6 +173,14 @@ def scrape_yuyutei_cards(search_query: str):
                         card_set_en = detail_data["cardSet"]
                     if detail_data.get("cardName"):
                         card_name_en = detail_data["cardName"]
+                    if not rarity and detail_data.get("rarity"):
+                        rarity = detail_data["rarity"]
+
+                # Fallback check preceding headings (e.g. "P-SR Card List")
+                if not rarity:
+                    prev_heading = box.find_previous(["h2", "h3", "h4", "h5", "div"])
+                    if prev_heading:
+                        rarity = extract_rarity_from_text(prev_heading.text)
 
                 if not raw_jp_name:
                     h4_tag = box.find(["h4", "h5"])
@@ -188,7 +211,7 @@ def scrape_yuyutei_cards(search_query: str):
                         "cardNo": extracted_card_no,
                         "cardName": final_card_name,
                         "cardSet": card_set_en,
-                        "rarity": rarity,
+                        "rarity": rarity if rarity else "N/A",
                         "priceJpy": card_price,
                         "imageUrl": yyt_img_url
                     })
